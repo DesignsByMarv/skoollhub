@@ -1,10 +1,4 @@
-import type { Metadata } from 'next';
-import './globals.css';
-
-export const metadata: Metadata = {
-  title: 'SkoollHub — All-in-One Nigerian Student Platform',
-  description: 'Housing, Roommates, Timetables, Social Feed & AI Assistant for Nigerian Campus Students',
-};
+import './globals.css'; // 👈 MUST BE PRESENT
 
 export default function RootLayout({
   children,
@@ -13,7 +7,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased bg-slate-50 text-slate-900">{children}</body>
+      <body className="bg-[#F2F2F7] dark:bg-[#000000] text-gray-900 dark:text-white min-h-screen">
+        {children}
+      </body>
     </html>
   );
 }

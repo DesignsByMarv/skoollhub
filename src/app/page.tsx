@@ -1,44 +1,66 @@
-import React from 'react';
-import { ArrowRight, GraduationCap, Building2, Users } from 'lucide-react';
+import Link from 'next/link';
+import MotivationalQuote from '@/components/MotivationalQuote';
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-6 text-center space-y-6">
-        <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl mx-auto">
-          <GraduationCap className="w-8 h-8" />
+    <div className="min-h-screen flex flex-col justify-between bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white relative">
+      {/* Navbar */}
+      <header className="px-6 py-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
+        <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+          SkoollHub
+        </h1>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/login"
+            className="text-sm font-medium px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+          >
+            Sign In
+          </Link>
+          <Link
+            href="/signup"
+            className="text-sm font-medium px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+          >
+            Get Started
+          </Link>
         </div>
-        
-        <div className="space-y-2">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Welcome to <span className="text-blue-600">SkoollHub</span>
-          </h1>
-          <p className="text-sm text-slate-500">
-            The all-in-one platform for Nigerian university students.
-          </p>
-        </div>
+      </header>
 
-        <div className="grid grid-cols-2 gap-3 pt-2">
-          <div className="p-3 bg-slate-50 rounded-xl text-left border border-slate-100">
-            <Building2 className="w-5 h-5 text-blue-600 mb-1" />
-            <p className="text-xs font-semibold text-slate-800">Housing</p>
-            <p className="text-[10px] text-slate-500">Find lodges near campus</p>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-xl text-left border border-slate-100">
-            <Users className="w-5 h-5 text-blue-600 mb-1" />
-            <p className="text-xs font-semibold text-slate-800">Roommates</p>
-            <p className="text-[10px] text-slate-500">Match with students</p>
-          </div>
-        </div>
+      {/* Hero Section */}
+      <main className="max-w-4xl mx-auto px-6 py-20 text-center space-y-8">
+        <h2 className="text-4xl md:text-6xl font-extrabold tracking-tight">
+          Your All-In-One <br />
+          <span className="text-blue-600 dark:text-blue-400">
+            Campus Companion
+          </span>
+        </h2>
 
-        <button 
-          type="button" 
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-sm cursor-pointer"
-        >
-          Get Started
-          <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
-    </main>
+        <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+          Find off-campus hostels, match with compatibility-tested roommates, manage your timetable, and connect with students across your university.
+        </p>
+
+        <div className="flex items-center justify-center gap-4">
+          <Link
+            href="/signup"
+            className="px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold text-base hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            Get Started Free
+          </Link>
+          <Link
+            href="/login"
+            className="px-6 py-3 rounded-xl bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200 font-semibold text-base hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors"
+          >
+            Sign In
+          </Link>
+        </div>
+      </main>
+
+      {/* Floating Motivational Quote */}
+      <MotivationalQuote />
+
+      {/* Footer */}
+    <footer className="py-6 text-center text-xs text-gray-500 dark:text-gray-400">
+  © 2026 SkoollHub. All rights reserved.
+</footer>
+    </div>
   );
 }

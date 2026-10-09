@@ -1,3 +1,4 @@
+@import "tailwindcss";
 /* Disable web text-selection and overscroll bounce */
 html, body {
   overscroll-behavior-y: none;

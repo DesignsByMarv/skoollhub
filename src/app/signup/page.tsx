@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { Eye, EyeOff, Mail, Lock, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, AtSign, CheckCircle2 } from 'lucide-react';
 
 export default function SignupPage() {
+  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -25,6 +27,10 @@ export default function SignupPage() {
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/login`,
+          data: {
+            full_name: fullName,
+            username: username.toLowerCase().trim(),
+          },
         },
       });
 
@@ -52,7 +58,7 @@ export default function SignupPage() {
             We sent a verification link to <span className="font-semibold text-gray-900 dark:text-white">{email}</span>.
           </p>
           <p className="mt-2 text-xs text-gray-500">
-            Please check your inbox (or spam) and click the link to confirm your account before signing in.
+            Please check your inbox or spam folder and click the link to activate your SkoollHub account.
           </p>
           <Link
             href="/login"
@@ -70,16 +76,50 @@ export default function SignupPage() {
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-md dark:bg-gray-800">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Create your SkoollHub Account</h1>
-          <p className="mt-1 text-sm text-gray-500">Join your campus community</p>
+          <p className="mt-1 text-sm text-gray-500">Connect with your campus community</p>
         </div>
 
         {errorMsg && (
-          <div className="mb-4 rounded-xl bg-red-50 p-3 text-xs text-red-600 border border-red-200">
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-600">
             {errorMsg}
           </div>
         )}
 
         <form onSubmit={handleSignUp} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              Full Name
+            </label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                required
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Afolabi Marv"
+                className="w-full rounded-xl border border-gray-300 bg-transparent py-2.5 pl-10 pr-4 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              Username
+            </label>
+            <div className="relative">
+              <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="marv_plug"
+                className="w-full rounded-xl border border-gray-300 bg-transparent py-2.5 pl-10 pr-4 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">
               Email Address
@@ -92,7 +132,7 @@ export default function SignupPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="student@unilorin.edu.ng"
-                className="w-full rounded-xl border border-gray-300 bg-transparent py-2.5 pl-10 pr-4 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                className="w-full rounded-xl border border-gray-300 bg-transparent py-2.5 pl-10 pr-4 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white"
               />
             </div>
           </div>
@@ -110,7 +150,7 @@ export default function SignupPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full rounded-xl border border-gray-300 bg-transparent py-2.5 pl-10 pr-10 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                className="w-full rounded-xl border border-gray-300 bg-transparent py-2.5 pl-10 pr-10 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white"
               />
               <button
                 type="button"

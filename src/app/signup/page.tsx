@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Eye, EyeOff, Mail, Lock, User, AtSign, CheckCircle2 } from 'lucide-react';
 
 export default function SignupPage() {
+  const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -14,6 +16,12 @@ export default function SignupPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+  const [resending, setResending] = useState(false);
+
+  function getEmailRedirectTo() {
+    return `${window.location.origin}/auth/confirm?next=/dashboard`;
+  }
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +34,7 @@ export default function SignupPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
+          emailRedirectTo: getEmailRedirectTo(),
           data: {
             full_name: fullName,
             username: username.toLowerCase().trim(),
@@ -37,12 +45,40 @@ export default function SignupPage() {
       if (error) {
         setErrorMsg(error.message);
       } else if (data?.user) {
-        setIsSubmitted(true);
+        if (data.session) {
+          router.replace('/dashboard');
+        } else {
+          setIsSubmitted(true);
+        }
       }
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'An unexpected error occurred');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setResending(true);
+    setResendMessage('');
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo: getEmailRedirectTo() },
+      });
+
+      if (error) {
+        setResendMessage(error.message);
+      } else {
+        setResendMessage('A new verification email has been requested. Check your inbox and spam folder.');
+      }
+    } catch (err) {
+      setResendMessage(err instanceof Error ? err.message : 'Could not resend the verification email.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -60,9 +96,22 @@ export default function SignupPage() {
           <p className="mt-2 text-xs text-gray-500">
             Please check your inbox or spam folder and click the link to activate your SkoollHub account.
           </p>
+          {resendMessage && (
+            <p role="status" className="mt-4 text-sm text-gray-600 dark:text-gray-300">
+              {resendMessage}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={handleResendVerification}
+            disabled={resending}
+            className="mt-6 w-full rounded-xl border border-indigo-200 px-4 py-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
+          >
+            {resending ? 'Sending...' : 'Resend verification email'}
+          </button>
           <Link
             href="/login"
-            className="mt-6 inline-block w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
+            className="mt-3 inline-block w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
           >
             Go to Login
           </Link>

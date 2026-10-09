@@ -1,366 +1,407 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  ArrowLeft,
+  BookOpen,
+  Bot,
+  ChevronRight,
+  ExternalLink,
+  LoaderCircle,
+  Menu,
+  MessageSquare,
+  Plus,
+  Search,
+  Send,
+  Sparkles,
+  X,
+} from 'lucide-react';
 
 type Mode = 'chat' | 'web' | 'social' | 'research';
-
-interface Message {
+type Source = { title: string; url: string };
+type Message = {
   id: string;
-  sender: 'user' | 'ai';
-  text: string;
-  mode?: Mode;
-  sources?: { title: string; url: string }[];
-  timestamp: string;
+  sender: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+  sources?: Source[];
+};
+type Conversation = { id: string; title: string; created_at: string };
+
+const modes: { id: Mode; label: string; icon: typeof MessageSquare }[] = [
+  { id: 'chat', label: 'Chat', icon: MessageSquare },
+  { id: 'web', label: 'Web search', icon: Search },
+  { id: 'social', label: 'Campus & social', icon: Sparkles },
+  { id: 'research', label: 'Research', icon: BookOpen },
+];
+
+const welcomeMessage: Message = {
+  id: 'welcome',
+  sender: 'assistant',
+  content: 'Hi! I’m SkoollHub AI, here to help with studying, campus life, and finding useful information. What can I help you with?',
+  created_at: new Date().toISOString(),
+};
+
+function formatTime(timestamp: string) {
+  return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+async function readError(response: Response) {
+  const data = await response.json().catch(() => null) as { error?: string } | null;
+  return data?.error || 'Something went wrong. Please try again.';
 }
 
 export default function AIAssistantPage() {
   const router = useRouter();
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [activeMode, setActiveMode] = useState<Mode>('chat');
   const [inputQuery, setInputQuery] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [error, setError] = useState('');
+  const [messages, setMessages] = useState<Message[]>([welcomeMessage]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      sender: 'ai',
-      text: "Hello! I am your SkoollHub AI Assistant. I can search the web, track campus social media, or conduct deep research on academic topics and off-campus housing. How can I help you today?",
-      timestamp: '12:00 PM',
-    },
-  ]);
-
-  // Sync Dark Mode
-  useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+  const loadConversation = useCallback(async (id: string) => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/ai?conversationId=${encodeURIComponent(id)}`);
+      if (!response.ok) throw new Error(await readError(response));
+      const data = await response.json() as { conversation: Conversation; messages: Message[] };
+      setConversationId(data.conversation.id);
+      setMessages(data.messages.length ? data.messages : [welcomeMessage]);
+      setIsHistoryOpen(false);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Could not load this conversation.');
+    } finally {
+      setIsLoading(false);
     }
-  }, [isDarkMode]);
+  }, []);
 
-  // Auto-scroll chat
+  useEffect(() => {
+    let isMounted = true;
+    async function loadHistory() {
+      try {
+        const response = await fetch('/api/ai');
+        if (!response.ok) throw new Error(await readError(response));
+        const data = await response.json() as { conversations: Conversation[] };
+        if (!isMounted) return;
+        setConversations(data.conversations);
+        if (data.conversations.length) {
+          await loadConversation(data.conversations[0].id);
+        } else {
+          setIsLoading(false);
+        }
+      } catch (loadError) {
+        if (!isMounted) return;
+        setError(loadError instanceof Error ? loadError.message : 'Could not load your AI chats.');
+        setIsLoading(false);
+      }
+    }
+    void loadHistory();
+    return () => {
+      isMounted = false;
+    };
+  }, [loadConversation]);
+
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isThinking]);
 
-  const handleNavigate = (path: string) => {
-    router.push(path);
+  const startNewChat = () => {
+    setConversationId(null);
+    setMessages([welcomeMessage]);
+    setError('');
+    setIsHistoryOpen(false);
+    setActiveMode('chat');
+    inputRef.current?.focus();
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputQuery.trim() || isThinking) return;
+  const handleSendMessage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = inputQuery.trim();
+    if (!query || isThinking) return;
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
+    const temporaryMessage: Message = {
+      id: `pending-${Date.now()}`,
       sender: 'user',
-      text: inputQuery.trim(),
-      mode: activeMode,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      content: query,
+      created_at: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, userMsg]);
-    const currentInput = inputQuery.trim();
+    setMessages((current) => [...current, temporaryMessage]);
     setInputQuery('');
+    setError('');
     setIsThinking(true);
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, mode: activeMode, conversationId }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
 
-    // Simulated AI response handling (Connect your API route here)
-    setTimeout(() => {
-      let aiReplyText = '';
-      let mockSources: { title: string; url: string }[] | undefined;
-
-      if (activeMode === 'web') {
-        aiReplyText = `🌐 **Web Search Results for:** "${currentInput}"\n\nBased on live web results, here is the latest context and overview...`;
-        mockSources = [
-          { title: 'OAU Student Portal Update', url: '#' },
-          { title: 'Ile-Ife Campus News Brief', url: '#' },
-        ];
-      } else if (activeMode === 'social') {
-        aiReplyText = `📱 **Social Media Trends:**\n\nRecent posts across X (Twitter) and student forums mention key discussions regarding hosteling around Asherifa and Gate 1.`;
-      } else if (activeMode === 'research') {
-        aiReplyText = `🔬 **Deep Research Synthesis:**\n\n### 1. Context & Overview\nAnalyzing multiple technical sources and academic documents regarding ${currentInput}...\n\n### 2. Strategic Breakdown\n- **Point A:** High impact factor noted across primary references.\n- **Point B:** Structured findings align with standard benchmarks.`;
-        mockSources = [
-          { title: 'Academic Database Index', url: '#' },
-          { title: 'ResearchGate Reference Paper', url: '#' },
-        ];
-      } else {
-        aiReplyText = `I analyzed your query regarding "${currentInput}". Here is a concise summary based on your prompt.`;
-      }
-
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: 'ai',
-        text: aiReplyText,
-        mode: activeMode,
-        sources: mockSources,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      const data = await response.json() as {
+        reply: string;
+        sources: Source[];
+        conversation: Conversation;
       };
-
-      setMessages((prev) => [...prev, aiMsg]);
+      const reply: Message = {
+        id: `reply-${Date.now()}`,
+        sender: 'assistant',
+        content: data.reply,
+        sources: data.sources,
+        created_at: new Date().toISOString(),
+      };
+      setConversationId(data.conversation.id);
+      setConversations((current) => [
+        data.conversation,
+        ...current.filter((item) => item.id !== data.conversation.id),
+      ]);
+      setMessages((current) => [...current, reply]);
+    } catch (sendError) {
+      setMessages((current) => current.filter((message) => message.id !== temporaryMessage.id));
+      setInputQuery(query);
+      setError(sendError instanceof Error ? sendError.message : 'Could not send your message.');
+    } finally {
       setIsThinking(false);
-    }, 1500);
+    }
   };
 
   return (
-    <div className="min-h-screen text-gray-900 dark:text-gray-100 bg-amber-50/20 dark:bg-zinc-950 pb-24 relative select-none flex flex-col">
-      
-      {/* HEADER MATCHING DASHBOARD */}
-      <header className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-gray-200 dark:border-zinc-800 px-4 py-3">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <h1 
-            onClick={() => handleNavigate('/dashboard')}
-            className="font-extrabold text-xl tracking-tight text-indigo-600 dark:text-indigo-400 cursor-pointer flex items-center gap-2"
+    <div className="flex min-h-screen bg-[#f7f7fb] text-slate-900 dark:bg-zinc-950 dark:text-zinc-100">
+      {isHistoryOpen && (
+        <button
+          type="button"
+          aria-label="Close chat history"
+          className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden"
+          onClick={() => setIsHistoryOpen(false)}
+        />
+      )}
+
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-[280px] flex-col border-r border-slate-200 bg-white transition-transform dark:border-zinc-800 dark:bg-zinc-900 lg:static lg:z-auto lg:translate-x-0 ${isHistoryOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex h-16 items-center justify-between px-5">
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard')}
+            className="flex items-center gap-2 font-extrabold tracking-tight text-indigo-700 dark:text-indigo-300"
           >
-            <span>SkoollHub AI</span>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
-              Pro
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600 text-white">
+              <Sparkles size={17} />
             </span>
-          </h1>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-zinc-700 transition-colors"
-              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {isDarkMode ? '☀️' : '🌙'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleNavigate('/settings')}
-              className="p-2 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-zinc-700 transition-colors"
-              title="Settings"
-            >
-              ⚙️
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleNavigate('/profile')}
-              className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-xs border-2 border-indigo-200 dark:border-indigo-900 hover:opacity-90 transition-opacity"
-              title="Profile"
-            >
-              M
-            </button>
-          </div>
+            SkoollHub
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsHistoryOpen(false)}
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 lg:hidden"
+            aria-label="Close chat history"
+          >
+            <X size={18} />
+          </button>
         </div>
-      </header>
 
-      {/* MAIN CONTAINER */}
-      <main className="max-w-3xl mx-auto w-full flex-1 flex flex-col px-4 py-6 h-[calc(100vh-140px)]">
-        
-        {/* MESSAGES FEED */}
-        <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+        <div className="px-4 pb-4">
+          <button
+            type="button"
+            onClick={startNewChat}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+          >
+            <Plus size={17} />
+            New chat
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-3">
+          <p className="px-3 pb-2 pt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+            Recent chats
+          </p>
+          {conversations.length ? (
+            <div className="space-y-1">
+              {conversations.map((conversation) => (
+                <button
+                  type="button"
+                  key={conversation.id}
+                  onClick={() => void loadConversation(conversation.id)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${conversation.id === conversationId ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-100 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}
+                >
+                  <MessageSquare size={16} className="shrink-0 text-slate-400" />
+                  <span className="truncate">{conversation.title}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="px-3 py-3 text-xs leading-5 text-slate-400">Your saved conversations will show here.</p>
+          )}
+        </div>
+
+        <div className="border-t border-slate-200 p-4 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard')}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            <ArrowLeft size={16} />
+            Back to campus
+          </button>
+          <p className="px-3 pt-3 text-[11px] text-slate-400">AI responses can be inaccurate. Verify important details.</p>
+        </div>
+      </aside>
+
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsHistoryOpen(true)}
+              aria-label="Open chat history"
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 lg:hidden"
             >
-              {msg.sender === 'ai' && (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 text-white flex items-center justify-center text-sm font-bold shadow-md shrink-0">
-                  🤖
-                </div>
-              )}
+              <Menu size={19} />
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold sm:text-base">SkoollHub AI</h1>
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400">Your study and campus companion</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Gemini AI
+          </div>
+        </header>
 
-              <div
-                className={`max-w-[85%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm ${
-                  msg.sender === 'user'
-                    ? 'bg-indigo-600 text-white rounded-br-none'
-                    : 'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 text-gray-800 dark:text-zinc-200 rounded-bl-none'
-                }`}
-              >
-                <div className="whitespace-pre-wrap">{msg.text}</div>
-
-                {/* Sources list if available */}
-                {msg.sources && msg.sources.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-                      Sources & References
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {msg.sources.map((source, i) => (
-                        <a
-                          key={i}
-                          href={source.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[10px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded-md hover:underline font-medium"
-                        >
-                          🔗 {source.title}
-                        </a>
-                      ))}
+        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 pb-5 pt-6 sm:px-6">
+          <section className="flex-1 space-y-5 overflow-y-auto pb-6" aria-live="polite">
+            {isLoading ? (
+              <div className="flex min-h-[45vh] items-center justify-center text-sm text-slate-500">
+                <LoaderCircle size={18} className="mr-2 animate-spin" />
+                Loading your conversations…
+              </div>
+            ) : (
+              messages.map((message) => {
+                const isUser = message.sender === 'user';
+                return (
+                  <div key={message.id} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                    {!isUser && (
+                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
+                        <Bot size={17} />
+                      </div>
+                    )}
+                    <div className={`max-w-[88%] sm:max-w-[78%] ${isUser ? 'order-first' : ''}`}>
+                      <div className={`rounded-2xl px-4 py-3 text-sm leading-6 ${isUser ? 'rounded-br-md bg-indigo-600 text-white' : 'rounded-bl-md border border-slate-200 bg-white text-slate-800 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100'}`}>
+                        <p className="whitespace-pre-wrap">{message.content}</p>
+                        {message.sources && message.sources.length > 0 && (
+                          <div className="mt-4 border-t border-slate-200 pt-3 dark:border-zinc-700">
+                            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Sources</p>
+                            <div className="flex flex-wrap gap-2">
+                              {message.sources.map((source) => (
+                                <a
+                                  key={source.url}
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-950"
+                                >
+                                  <span className="truncate">{source.title}</span>
+                                  <ExternalLink size={12} className="shrink-0" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <p className={`mt-1 text-[10px] text-slate-400 ${isUser ? 'text-right' : ''}`}>{formatTime(message.created_at)}</p>
                     </div>
+                    {isUser && (
+                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-200 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300">
+                        <span className="sr-only">You</span>
+                        <ChevronRight size={17} />
+                      </div>
+                    )}
                   </div>
-                )}
-
-                <span className="text-[9px] opacity-60 block text-right mt-1.5">
-                  {msg.timestamp}
+                );
+              })
+            )}
+            {isThinking && (
+              <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-zinc-400">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600 text-white"><Bot size={17} /></span>
+                <span className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <LoaderCircle size={15} className="animate-spin" />
+                  Thinking…
                 </span>
               </div>
-            </div>
-          ))}
+            )}
+            <div ref={chatBottomRef} />
+          </section>
 
-          {isThinking && (
-            <div className="flex gap-3 items-center">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 text-white flex items-center justify-center text-sm font-bold shadow-md animate-pulse">
-                🤖
+          <div className="pt-3">
+            {error && (
+              <div role="alert" className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                {error}
+                {error.toLowerCase().includes('sign in') && (
+                  <button type="button" onClick={() => router.push('/login')} className="ml-2 font-semibold underline">
+                    Sign in
+                  </button>
+                )}
               </div>
-              <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl px-4 py-3 text-xs text-gray-500 dark:text-zinc-400 flex items-center gap-2">
-                <span className="animate-spin">🌀</span>
-                <span>Synthesizing response and gathering findings...</span>
-              </div>
+            )}
+
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+              {modes.map(({ id, label, icon: Icon }) => (
+                <button
+                  type="button"
+                  key={id}
+                  aria-pressed={activeMode === id}
+                  onClick={() => setActiveMode(id)}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold transition ${activeMode === id ? 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300'}`}
+                >
+                  <Icon size={14} />
+                  {label}
+                </button>
+              ))}
             </div>
-          )}
 
-          <div ref={chatBottomRef} />
-        </div>
-
-        {/* CLAUDE-STYLE MODE SELECTOR & INPUT BOX */}
-        <div className="mt-4 bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 p-2 shadow-lg">
-          
-          {/* Mode Selector Tabs */}
-          <div className="flex items-center gap-1.5 p-1 bg-gray-50 dark:bg-zinc-950 rounded-xl mb-2 overflow-x-auto no-scrollbar">
-            <button
-              type="button"
-              onClick={() => setActiveMode('chat')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeMode === 'chat'
-                  ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
-            >
-              💬 General Chat
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveMode('web')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeMode === 'web'
-                  ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
-            >
-              🌐 Web Search
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveMode('social')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeMode === 'social'
-                  ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
-            >
-              📱 Social Media
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveMode('research')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                activeMode === 'research'
-                  ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
-            >
-              🔬 Research Mode
-            </button>
+            <form onSubmit={handleSendMessage} className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:ring-indigo-950">
+              <textarea
+                ref={inputRef}
+                rows={2}
+                maxLength={4000}
+                value={inputQuery}
+                onChange={(event) => setInputQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                disabled={isThinking || isLoading}
+                aria-label="Message SkoollHub AI"
+                placeholder={activeMode === 'web' ? 'Search the web for campus updates, study topics, and more…' : activeMode === 'social' ? 'Search public campus and social web discussions…' : activeMode === 'research' ? 'Ask a research question for a sourced synthesis…' : 'Ask about studying, campus life, or anything else…'}
+                className="max-h-40 min-h-[52px] w-full resize-y bg-transparent px-3 py-2 text-sm leading-6 outline-none placeholder:text-slate-400 disabled:opacity-60 dark:text-zinc-100"
+              />
+              <div className="flex items-center justify-between px-2 pb-1">
+                <span className="text-[10px] text-slate-400">Enter to send · Shift + Enter for a new line</span>
+                <button
+                  type="submit"
+                  disabled={!inputQuery.trim() || isThinking || isLoading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Send
+                  <Send size={14} />
+                </button>
+              </div>
+            </form>
+            <p className="mt-2 text-center text-[10px] text-slate-400">
+              {activeMode === 'chat' ? 'AI responses may be inaccurate; verify important information.' : 'Search results come from public web sources and may be incomplete.'}
+            </p>
           </div>
-
-          {/* Form Input Bar */}
-          <form onSubmit={handleSendMessage} className="flex items-center gap-2 px-2 pb-1">
-            <input
-              type="text"
-              value={inputQuery}
-              onChange={(e) => setInputQuery(e.target.value)}
-              placeholder={
-                activeMode === 'web'
-                  ? 'Search live web for news, portals, hostel updates...'
-                  : activeMode === 'social'
-                  ? 'Track campus discussions, X/Twitter posts, viral trends...'
-                  : activeMode === 'research'
-                  ? 'Deep research academic papers, complex queries, course outlines...'
-                  : 'Ask AI anything...'
-              }
-              className="flex-1 text-xs bg-transparent border-none focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-400 px-2 py-2"
-            />
-
-            <button
-              type="submit"
-              disabled={!inputQuery.trim() || isThinking}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-md"
-            >
-              Send
-            </button>
-          </form>
         </div>
       </main>
-
-      {/* PERMANENT MESSAGES BUTTON (Bottom Right) */}
-      <div className="fixed bottom-4 right-4 z-40">
-        <button
-          type="button"
-          onClick={() => handleNavigate('/messages')}
-          className="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl hover:scale-105 active:scale-95 transition-all border-2 border-white dark:border-zinc-900"
-          title="Direct Messages"
-        >
-          <span className="text-xl">💬</span>
-        </button>
-      </div>
-
-      {/* BOTTOM NAVIGATION BAR */}
-      <nav className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[88%] max-w-md bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md rounded-full border border-gray-200 dark:border-zinc-800 px-6 py-2.5 flex items-center justify-between shadow-xl">
-        <button
-          type="button"
-          onClick={() => handleNavigate('/dashboard')}
-          className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none"
-        >
-          <span className="text-lg">🏠</span>
-          <span>Home</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleNavigate('/houses')}
-          className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none"
-        >
-          <span className="text-lg">🏢</span>
-          <span>Hostels</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleNavigate('/dashboard')}
-          className="flex items-center justify-center w-11 h-11 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-2xl shadow-md active:scale-90 transition-transform -mt-5 border-2 border-white dark:border-zinc-900 focus:outline-none"
-          title="Create"
-        >
-          +
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleNavigate('/roommates')}
-          className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none"
-        >
-          <span className="text-lg">👥</span>
-          <span>Roommates</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleNavigate('/timetable')}
-          className="flex flex-col items-center gap-0.5 text-[10px] font-bold text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none"
-        >
-          <span className="text-lg">📅</span>
-          <span>Classes</span>
-        </button>
-      </nav>
     </div>
   );
 }

@@ -2,42 +2,16 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import LiveFeed, { CreatePostModal, Post } from '@/components/feed/LiveFeed';
+import CampusFeed from '@/components/feed/CampusFeed';
 import RightSidebar from '@/components/feed/RightSidebar';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const [posts, setPosts] = useState<Post[]>([
-    {
-      id: '1',
-      author: 'SkoollHub Campus',
-      handle: 'skoollhub_official',
-      avatar: '🚀',
-      location: 'Obafemi Awolowo University',
-      timestamp: '2h ago',
-      content: 'Welcome to the official SkoollHub live campus feed! Connect with hostel listings, roommate matchers, and timetable updates directly from your dashboard. 🎓✨',
-      mediaUrl: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=1200&auto=format&fit=crop',
-      mediaType: 'image',
-      likesCount: 142,
-      isLiked: false,
-      isBookmarked: false,
-      comments: [
-        { id: 'c1', author: 'marv_tech', text: 'The new dashboard layout is super clean! 🔥', timestamp: '1h ago' },
-      ],
-    },
-  ]);
-
-  // Sync Dark Mode Class on Root
+  // Restore the shared theme preference when navigating to this page.
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    document.documentElement.classList.toggle('dark', window.localStorage.getItem('skoollhub-theme') === 'dark');
+  }, []);
 
   // Draggable Floating AI Assistant Position (Centered horizontally above bottom nav)
   const [aiPos, setAiPos] = useState({ x: 20, y: 90 });
@@ -79,10 +53,6 @@ export default function DashboardPage() {
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
-  };
-
-  const handleAddPost = (newPost: Post) => {
-    setPosts([newPost, ...posts]);
   };
 
   const handleNavigate = (path: string) => {
@@ -136,7 +106,7 @@ export default function DashboardPage() {
       {/* MAIN FEED CONTENT */}
       <main className="flex justify-center gap-8 max-w-5xl mx-auto py-6 px-3">
         <div className="flex-1 max-w-[470px]">
-          <LiveFeed posts={posts} setPosts={setPosts} />
+          <CampusFeed />
         </div>
         <RightSidebar />
       </main>
@@ -195,7 +165,7 @@ export default function DashboardPage() {
         {/* ➕ CENTER CREATE POST BUTTON */}
         <button
           type="button"
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => handleNavigate('/feed')}
           className="flex items-center justify-center w-11 h-11 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-2xl shadow-md active:scale-90 transition-transform -mt-5 border-2 border-white dark:border-zinc-900 focus:outline-none"
           title="Create Post"
         >
@@ -221,12 +191,6 @@ export default function DashboardPage() {
         </button>
       </nav>
 
-      {/* CREATE POST MODAL */}
-      <CreatePostModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onAddPost={handleAddPost}
-      />
     </div>
   );
 }

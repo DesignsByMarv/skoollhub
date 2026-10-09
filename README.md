@@ -34,3 +34,31 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## AI assistant setup
+
+The `/ai-assistant` page uses Gemini for chat and the existing Supabase
+authentication/database for private, saved conversation history. Web search,
+campus/social search, and research modes use Tavily to gather public sources
+before Gemini responds.
+
+The dashboard and `/feed` share the same Supabase-backed campus feed, including
+category filters, posts, likes, comments, bookmarks, direct image/video
+uploads, and opt-in device location sharing. The campus feed migrations also
+create missing student profiles for existing email accounts and new signups
+so they can publish posts and comments.
+
+1. Copy `.env.example` to `.env.local`.
+2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for your
+   Supabase project.
+3. Set `GEMINI_API_KEY` to a server-side Gemini API key. `GEMINI_MODEL` is
+   optional and defaults to `gemini-2.5-flash`.
+4. Set `TAVILY_API_KEY` to enable the live-search modes. General chat does not
+   require Tavily.
+5. Apply the SQL files in `supabase/migrations/` to the same Supabase project,
+   in filename order.
+
+Keep `GEMINI_API_KEY` and `TAVILY_API_KEY` private: do not prefix them with
+`NEXT_PUBLIC_` or expose them in client-side code. Add all four values to the
+Netlify site's environment variables before deploying. AI chat requires a
+signed-in, email-confirmed account.

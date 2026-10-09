@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 /* Disable web text-selection and overscroll bounce */
 html, body {
   overscroll-behavior-y: none;
@@ -11,4 +12,21 @@ html, body {
 body {
   min-height: 100vh;
   min-height: -webkit-fill-available;
+}
+
+.app-page {
+  user-select: text;
+}
+
+.app-page header.sticky {
+  display: none;
+}
+
+.app-page nav.fixed {
+  display: none;
+}
+
+.app-page > div > .fixed.z-50,
+.app-page > div > .fixed.bottom-4.right-4 {
+  display: none;
 }

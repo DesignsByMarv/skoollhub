@@ -57,12 +57,8 @@ export default function RoommatesPage() {
   ];
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    document.documentElement.classList.toggle('dark', window.localStorage.getItem('skoollhub-theme') === 'dark');
+  }, []);
 
   // Floating Draggable AI Button State
   const [aiPos, setAiPos] = useState({ x: 20, y: 100 });

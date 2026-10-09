@@ -210,13 +210,15 @@ export async function POST(request: Request) {
     const geminiUrl = new URL(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
     );
-    geminiUrl.searchParams.set('key', process.env.GEMINI_API_KEY);
 
     let geminiResponse: Response;
     try {
       geminiResponse = await fetch(geminiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': process.env.GEMINI_API_KEY,
+        },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: modeInstructions[mode as Mode] }] },
           contents,

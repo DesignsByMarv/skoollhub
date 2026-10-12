@@ -7,6 +7,10 @@ function errorResponse(error: string, status: number) {
   return NextResponse.json({ error }, { status });
 }
 
+function isMissingSchemaField(error: { code?: string } | null) {
+  return error?.code === '42703' || error?.code === 'PGRST204';
+}
+
 function distanceInKilometers(
   latitude: number,
   longitude: number,
@@ -80,7 +84,7 @@ export async function GET(request: Request) {
     const search = url.searchParams.get('search')?.trim().replace(/^@/, '').slice(0, 40);
     if (search) {
       const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
-      const [usernameMatches, nameMatches] = await Promise.all([
+      let [usernameMatches, nameMatches] = await Promise.all([
         supabase.from('profiles')
           .select('id, full_name, username, avatar_url, department')
           .neq('id', user.id)
@@ -94,6 +98,22 @@ export async function GET(request: Request) {
           .ilike('full_name', pattern)
           .limit(12),
       ]);
+      const discoveryColumnMissing = isMissingSchemaField(usernameMatches.error)
+        || isMissingSchemaField(nameMatches.error);
+      if (discoveryColumnMissing) {
+        [usernameMatches, nameMatches] = await Promise.all([
+          supabase.from('profiles')
+            .select('id, full_name, username, avatar_url, department')
+            .neq('id', user.id)
+            .ilike('username', pattern)
+            .limit(12),
+          supabase.from('profiles')
+            .select('id, full_name, username, avatar_url, department')
+            .neq('id', user.id)
+            .ilike('full_name', pattern)
+            .limit(12),
+        ]);
+      }
       const searchError = usernameMatches.error ?? nameMatches.error;
       if (searchError) {
         console.error('Student search failed:', searchError.message);
@@ -106,27 +126,54 @@ export async function GET(request: Request) {
       return NextResponse.json({ suggestions: [...suggestions.values()].slice(0, 12) });
     }
 
-    const [{ data: followed, error: followedError }, { data: currentProfile, error: currentProfileError }] = await Promise.all([
+    const [{ data: followed, error: followedError }] = await Promise.all([
       supabase.from('follows').select('following_id').eq('follower_id', user.id),
-      supabase.from('profiles')
-        .select('school_id, location_latitude, location_longitude, location_sharing_enabled')
-        .eq('id', user.id)
-        .maybeSingle(),
     ]);
-    const setupError = followedError ?? currentProfileError;
-    if (setupError) {
-      console.error('Follow suggestions context query failed:', setupError.message);
+    if (followedError) {
+      console.error('Follow suggestions context query failed:', followedError.message);
+      return errorResponse('Could not load follow suggestions.', 500);
+    }
+    let { data: currentProfile, error: currentProfileError } = await supabase.from('profiles')
+      .select('school_id, location_latitude, location_longitude, location_sharing_enabled')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (isMissingSchemaField(currentProfileError)) {
+      const legacyProfile = await supabase.from('profiles')
+        .select('school_id')
+        .eq('id', user.id)
+        .maybeSingle();
+      currentProfileError = legacyProfile.error;
+      currentProfile = legacyProfile.data
+        ? { ...legacyProfile.data, location_latitude: null, location_longitude: null, location_sharing_enabled: false }
+        : null;
+    }
+    if (currentProfileError) {
+      console.error('Follow suggestions context query failed:', currentProfileError.message);
       return errorResponse('Could not load follow suggestions.', 500);
     }
 
     const excludedIds = [user.id, ...(followed ?? []).map((item) => item.following_id)];
-    const { data: suggestions, error: suggestionsError } = await supabase
+    let { data: suggestions, error: suggestionsError } = await supabase
       .from('profiles')
       .select('id, full_name, username, avatar_url, department, school_id, location_latitude, location_longitude, location_sharing_enabled, created_at')
       .not('id', 'in', `(${excludedIds.join(',')})`)
       .eq('is_discoverable', true)
       .order('created_at', { ascending: false })
       .limit(500);
+    if (isMissingSchemaField(suggestionsError)) {
+      const legacySuggestions = await supabase.from('profiles')
+        .select('id, full_name, username, avatar_url, department, school_id, created_at')
+        .not('id', 'in', `(${excludedIds.join(',')})`)
+        .order('created_at', { ascending: false })
+        .limit(500);
+      suggestions = legacySuggestions.data?.map((profile) => ({
+        ...profile,
+        location_latitude: null,
+        location_longitude: null,
+        location_sharing_enabled: false,
+      })) ?? null;
+      suggestionsError = legacySuggestions.error;
+    }
     if (suggestionsError) {
       console.error('Follow suggestions query failed:', suggestionsError.message);
       return errorResponse('Could not load follow suggestions.', 500);

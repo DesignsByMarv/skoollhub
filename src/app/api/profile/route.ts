@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getCountries } from 'libphonenumber-js';
 
-const profileColumns = 'id, email, full_name, username, avatar_url, school_id, department, level, bio, phone_number, country_iso, location_latitude, location_longitude, location_sharing_enabled, is_discoverable, is_verified, created_at';
+const profileColumns = '*';
 const supportedCountryCodes = new Set<string>(getCountries());
 
 function errorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function isMissingSchemaField(error: { code?: string } | null) {
+  return error?.code === '42703' || error?.code === 'PGRST204';
 }
 
 function isUuid(value: unknown): value is string {
@@ -109,7 +113,7 @@ export async function PATCH(request: Request) {
     }
     if (schoolId !== null && !isUuid(schoolId)) return errorResponse('Choose a valid school.', 400);
 
-    const { data: profile, error } = await supabase
+    let { data: profile, error } = await supabase
       .from('profiles')
       .update({
         full_name: fullName,
@@ -127,6 +131,26 @@ export async function PATCH(request: Request) {
       .eq('id', user.id)
       .select(profileColumns)
       .single();
+
+    if (isMissingSchemaField(error)) {
+      const legacyUpdate = await supabase.from('profiles')
+        .update({
+          full_name: fullName,
+          username,
+          avatar_url: avatarUrl,
+          department: department || null,
+          phone_number: phoneNumber || null,
+          bio: bio || null,
+          level,
+          school_id: schoolId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id)
+        .select(profileColumns)
+        .single();
+      profile = legacyUpdate.data;
+      error = legacyUpdate.error;
+    }
 
     if (error) {
       console.error('Profile update failed:', error.message);

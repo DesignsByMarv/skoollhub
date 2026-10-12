@@ -1,6 +1,10 @@
 import { connection, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
+function isMissingFunction(error: { code?: string } | null) {
+  return error?.code === '42883' || error?.code === 'PGRST202';
+}
+
 export async function GET() {
   await connection();
   try {
@@ -12,6 +16,7 @@ export async function GET() {
 
     const { data: result, error } = await supabase.rpc('get_unread_message_counts');
     if (error) {
+      if (isMissingFunction(error)) return NextResponse.json({ unreadCount: 0 });
       console.error('Unread message count query failed:', error.message);
       return NextResponse.json({ error: 'Could not load unread message counts.' }, { status: 500 });
     }

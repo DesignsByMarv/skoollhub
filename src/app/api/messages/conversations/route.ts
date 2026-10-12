@@ -20,6 +20,14 @@ function isUuid(value: unknown): value is string {
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function isMissingSchemaField(error: { code?: string } | null) {
+  return error?.code === '42703' || error?.code === 'PGRST204';
+}
+
+function isMissingFunction(error: { code?: string } | null) {
+  return error?.code === '42883' || error?.code === 'PGRST202';
+}
+
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
@@ -47,17 +55,29 @@ export async function GET() {
         .order('created_at', { ascending: false })
         .limit(500),
     ]);
-    const [{ data: unreadCountsData, error: unreadError }] = await Promise.all([
-      supabase.rpc('get_unread_message_counts'),
-    ]);
+    let participants = participantsResult.data as Array<{
+      chat_id: string;
+      user_id: string;
+      last_read_at: string | null;
+    }> | null;
+    let participantsError = participantsResult.error;
+    if (isMissingSchemaField(participantsError)) {
+      const legacyParticipants = await supabase.from('chat_participants')
+        .select('chat_id, user_id')
+        .in('chat_id', chatIds);
+      participants = legacyParticipants.data?.map((item) => ({ ...item, last_read_at: null })) ?? null;
+      participantsError = legacyParticipants.error;
+    }
+    const { data: unreadCountsData, error: unreadError } = await supabase.rpc('get_unread_message_counts');
     const unreadCounts = unreadCountsData as Array<{ chat_id: string; unread_count: number | string }> | null;
-    const queryError = participantsResult.error ?? messagesResult.error ?? unreadError;
+    const queryError = participantsError ?? messagesResult.error
+      ?? (isMissingFunction(unreadError) ? null : unreadError);
     if (queryError) {
       console.error('Conversation details query failed:', queryError.message);
       return errorResponse('Could not load conversations.', 500);
     }
 
-    const participantIds = [...new Set((participantsResult.data ?? [])
+    const participantIds = [...new Set((participants ?? [])
       .filter((item) => item.user_id !== user.id)
       .map((item) => item.user_id))];
     const { data: profiles, error: profilesError } = participantIds.length
@@ -75,7 +95,7 @@ export async function GET() {
       if (!lastMessageByChat.has(message.chat_id)) lastMessageByChat.set(message.chat_id, message);
     }
     const conversations = chatIds.map((chatId) => {
-      const otherUserId = (participantsResult.data ?? []).find(
+      const otherUserId = (participants ?? []).find(
         (item) => item.chat_id === chatId && item.user_id !== user.id
       )?.user_id;
       return {
@@ -119,6 +139,18 @@ export async function PATCH(request: Request) {
 
     const { error } = await supabase.rpc('mark_chat_read', { target_chat_id: chatId });
     if (error) {
+      if (isMissingFunction(error)) {
+        const { error: updateError } = await supabase.from('chat_participants')
+          .update({ last_read_at: new Date().toISOString() })
+          .eq('chat_id', chatId)
+          .eq('user_id', user.id);
+        if (isMissingSchemaField(updateError)) return NextResponse.json({ success: true });
+        if (updateError) {
+          console.error('Mark conversation read fallback failed:', updateError.message);
+          return errorResponse('Could not mark this conversation as read.', 500);
+        }
+        return NextResponse.json({ success: true });
+      }
       console.error('Mark conversation read failed:', error.message);
       return errorResponse('Could not mark this conversation as read.', 500);
     }

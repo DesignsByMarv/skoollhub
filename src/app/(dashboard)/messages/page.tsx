@@ -58,7 +58,6 @@ function MessagesContent() {
   const [search, setSearch] = useState('');
   const [currentUserId, setCurrentUserId] = useState('');
   const [loadingConversations, setLoadingConversations] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -126,7 +125,6 @@ function MessagesContent() {
   useEffect(() => {
     if (!selectedId) return;
     let active = true;
-    setLoadingMessages(true);
     async function loadMessages() {
       try {
         const response = await fetch(`/api/messages?chat_id=${encodeURIComponent(selectedId)}`, { cache: 'no-store' });
@@ -135,8 +133,6 @@ function MessagesContent() {
         if (active) setMessages(data.messages);
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load message history.');
-      } finally {
-        if (active) setLoadingMessages(false);
       }
     }
     void loadMessages();
@@ -306,9 +302,7 @@ function MessagesContent() {
 
           {error && <p role="alert" className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
           <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-4 dark:bg-zinc-950">
-            {loadingMessages ? (
-              <div className="flex justify-center py-8 text-sm text-slate-500"><LoaderCircle size={17} className="animate-spin" /></div>
-            ) : visibleMessages.length ? visibleMessages.map((message) => {
+            {visibleMessages.length ? visibleMessages.map((message) => {
               const isMine = message.sender_id === currentUserId;
               return (
                 <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>

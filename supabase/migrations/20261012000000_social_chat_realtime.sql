@@ -43,9 +43,6 @@ CREATE POLICY "Users can view chats they participate in"
 CREATE POLICY "Users can view participants in their chats"
   ON public.chat_participants FOR SELECT TO authenticated
   USING (public.is_chat_participant(chat_id));
-CREATE POLICY "Users can add themselves to chats"
-  ON public.chat_participants FOR INSERT TO authenticated
-  WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can view messages in their chats"
   ON public.messages FOR SELECT TO authenticated

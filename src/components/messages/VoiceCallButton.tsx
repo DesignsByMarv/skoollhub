@@ -47,6 +47,7 @@ export default function VoiceCallButton({
   const connectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const earlyCandidatesRef = useRef<Array<{ callId: string; candidate: RTCIceCandidateInit; receivedAt: number }>>([]);
   const currentCallIdRef = useRef('');
   const remoteUserIdRef = useRef('');
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -79,6 +80,7 @@ export default function VoiceCallButton({
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     pendingCandidatesRef.current = [];
+    earlyCandidatesRef.current = [];
     setRemoteStream(null);
     setIncomingSignal(null);
     setMuted(false);
@@ -149,16 +151,24 @@ export default function VoiceCallButton({
   }, [createConnection, sendSignal]);
 
   const receiveSignal = useCallback(async (signal: CallSignal) => {
-    if (signal.sender_id === currentUserId) return;
+    if (signal.sender_id === currentUserId || signal.recipient_id !== currentUserId) return;
     const callId = signal.payload?.call_id;
     if (signal.signal_type === 'offer' && signal.recipient_id === currentUserId && callId && statusRef.current === 'idle') {
+      const freshCandidates = earlyCandidatesRef.current.filter((entry) =>
+        entry.callId === callId && Date.now() - entry.receivedAt < 60_000
+      );
+      pendingCandidatesRef.current.push(...freshCandidates.map((entry) => entry.candidate));
+      earlyCandidatesRef.current = earlyCandidatesRef.current.filter((entry) => entry.callId !== callId);
       setIncomingSignal(signal);
       remoteUserIdRef.current = signal.sender_id;
       currentCallIdRef.current = callId;
       setStatus('incoming');
       return;
     }
-    if (!callId || callId !== currentCallIdRef.current) return;
+    const candidateMayPrecedeOffer = signal.signal_type === 'ice-candidate'
+      && statusRef.current === 'idle'
+      && !currentCallIdRef.current;
+    if (!callId || (callId !== currentCallIdRef.current && !candidateMayPrecedeOffer)) return;
 
     if (signal.signal_type === 'answer' && signal.payload?.sdp && connectionRef.current) {
       await connectionRef.current.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
@@ -168,8 +178,16 @@ export default function VoiceCallButton({
     } else if (signal.signal_type === 'ice-candidate' && signal.payload?.candidate) {
       if (connectionRef.current?.remoteDescription) {
         await connectionRef.current.addIceCandidate(new RTCIceCandidate(signal.payload.candidate));
-      } else {
+      } else if (callId === currentCallIdRef.current) {
         pendingCandidatesRef.current.push(signal.payload.candidate);
+      } else if (statusRef.current === 'idle' && earlyCandidatesRef.current.length < 100) {
+        earlyCandidatesRef.current.push({
+          callId,
+          candidate: signal.payload.candidate,
+          receivedAt: Date.now(),
+        });
+      } else {
+        return;
       }
     } else if (signal.signal_type === 'reject') {
       setError(`${recipientName} declined the call.`);
@@ -214,6 +232,15 @@ export default function VoiceCallButton({
           )
         );
         if (active && activeOffer && statusRef.current === 'idle') {
+          pendingCandidatesRef.current = data.signals.flatMap((signal) => {
+            const candidate = signal.payload?.candidate;
+            return signal.signal_type === 'ice-candidate'
+              && signal.recipient_id === currentUserId
+              && signal.payload?.call_id === activeOffer.payload?.call_id
+              && candidate
+              ? [candidate]
+              : [];
+          });
           setIncomingSignal(activeOffer);
           setStatus('incoming');
         }

@@ -8,7 +8,7 @@ import { Plus } from 'lucide-react';
 
 export default function FeedPage() {
   return (
-    <main className="mx-auto flex w-full max-w-[1200px] gap-8 px-4 py-6 sm:px-6 lg:py-8">
+    <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-4 py-6 sm:px-6 lg:flex-row lg:py-8">
       <div className="mx-auto min-w-0 w-full max-w-[640px] flex-1 space-y-5">
         <header className="flex items-center justify-between gap-3 px-1">
           <div>
@@ -22,7 +22,7 @@ export default function FeedPage() {
         <SuggestedPeople />
         <CampusFeed />
       </div>
-      <div className="hidden w-[300px] shrink-0 lg:block">
+      <div className="w-full shrink-0 lg:w-[300px]">
         <RightSidebar />
       </div>
     </main>

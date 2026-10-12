@@ -25,15 +25,23 @@ export default function SuggestedPeople() {
     const response = await fetch('/api/social', { cache: 'no-store' });
     const data = await response.json() as { suggestions?: Suggestion[]; nearby_enabled?: boolean; error?: string };
     if (!response.ok) throw new Error(data.error || 'Could not load suggestions.');
-    setPeople(data.suggestions ?? []);
-    setLocationEnabled(Boolean(data.nearby_enabled));
+    return data;
   }, []);
 
   useEffect(() => {
     let active = true;
-    loadSuggestions().catch((loadError: unknown) => {
-      if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load suggestions.');
-    });
+    fetch('/api/social', { cache: 'no-store' })
+      .then(async (response) => {
+        const data = await response.json() as { suggestions?: Suggestion[]; nearby_enabled?: boolean; error?: string };
+        if (!response.ok) throw new Error(data.error || 'Could not load suggestions.');
+        if (active) {
+          setPeople(data.suggestions ?? []);
+          setLocationEnabled(Boolean(data.nearby_enabled));
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load suggestions.');
+      });
     return () => {
       active = false;
     };
@@ -72,7 +80,9 @@ export default function SuggestedPeople() {
           throw new Error(data.error || 'Could not turn off nearby discovery.');
         }
         setLocationEnabled(false);
-        await loadSuggestions();
+        const data = await loadSuggestions();
+        setPeople(data.suggestions ?? []);
+        setLocationEnabled(Boolean(data.nearby_enabled));
         return;
       }
       if (!navigator.geolocation) throw new Error('Location sharing is not supported by this browser.');
@@ -95,8 +105,9 @@ export default function SuggestedPeople() {
         const data = await response.json() as { error?: string };
         throw new Error(data.error || 'Could not enable nearby discovery.');
       }
-      setLocationEnabled(true);
-      await loadSuggestions();
+      const data = await loadSuggestions();
+      setPeople(data.suggestions ?? []);
+      setLocationEnabled(Boolean(data.nearby_enabled));
     } catch (locationError) {
       if (locationError instanceof GeolocationPositionError) {
         setError(locationError.code === locationError.PERMISSION_DENIED

@@ -47,9 +47,10 @@ export async function GET() {
         .order('created_at', { ascending: false })
         .limit(500),
     ]);
-    const [{ data: unreadCounts, error: unreadError }] = await Promise.all([
+    const [{ data: unreadCountsData, error: unreadError }] = await Promise.all([
       supabase.rpc('get_unread_message_counts'),
     ]);
+    const unreadCounts = unreadCountsData as Array<{ chat_id: string; unread_count: number | string }> | null;
     const queryError = participantsResult.error ?? messagesResult.error ?? unreadError;
     if (queryError) {
       console.error('Conversation details query failed:', queryError.message);

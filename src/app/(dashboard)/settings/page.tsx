@@ -567,7 +567,7 @@ export default function SettingsPage() {
                   <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 p-4 dark:border-zinc-800">
                     <span>
                       <span className="block text-sm font-semibold text-slate-800 dark:text-zinc-100">Nearby student suggestions</span>
-                      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-zinc-400">With your browser's permission, share an approximate location (rounded to about 1 km) to rank nearby students. The exact GPS reading is not saved.</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-zinc-400">With your browser&apos;s permission, share an approximate location (rounded to about 1 km) to rank nearby students. The exact GPS reading is not saved.</span>
                     </span>
                     <input
                       type="checkbox"

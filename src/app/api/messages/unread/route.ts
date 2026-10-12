@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { connection, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 export async function GET() {
+  await connection();
   try {
     const supabase = await createServerSupabaseClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -9,12 +10,13 @@ export async function GET() {
       return NextResponse.json({ error: 'Please sign in with a confirmed email.' }, { status: 401 });
     }
 
-    const { data, error } = await supabase.rpc('get_unread_message_counts');
+    const { data: result, error } = await supabase.rpc('get_unread_message_counts');
     if (error) {
       console.error('Unread message count query failed:', error.message);
       return NextResponse.json({ error: 'Could not load unread message counts.' }, { status: 500 });
     }
 
+    const data = result as Array<{ unread_count: number | string }> | null;
     const unreadCount = (data ?? []).reduce((total, item) => total + Number(item.unread_count), 0);
     return NextResponse.json({ unreadCount });
   } catch (error) {

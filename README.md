@@ -65,10 +65,29 @@ Profiles show a post grid, follower/following counts, and follow/message
 actions. Feed suggestions let students discover and follow other students.
 
 Direct chats persist text and file messages in Supabase and use Supabase
-Realtime for incoming messages. Voice/video calling is not currently
-implemented. Apply all migrations in `supabase/migrations`, including
-`20261012000000_social_chat_realtime.sql`, before using follows, direct chats,
-or live message updates in production.
+Realtime for incoming messages. Chats also support recorded voice notes and
+one-to-one voice calls. Voice calls require HTTPS, microphone permission,
+Supabase Realtime, and (for reliable calls across networks) a TURN provider.
+Apply all migrations in `supabase/migrations`, including
+`20261012000000_social_chat_realtime.sql`,
+`20261012190000_signup_messaging_location.sql`, and
+`20261012200000_call_signal_retention.sql`, before using follows, signup
+metadata, unread-message updates, location-aware discovery, or calls in
+production.
+
+Registration collects country, phone, school, course/department, username,
+and academic level. The school and course directories are curated starter
+lists, not exhaustive national directories. Settings include account
+discoverability, in-app message alerts, appearance, and opt-in approximate
+location sharing. Location-based recommendations are only enabled after the
+student explicitly opts in; stored coordinates are rounded to approximately
+1 km. Nearby-place cards use a limited static campus-city directory.
+
+For reliable cross-network voice calls, set `TURN_SERVER_URLS` (comma-separated
+`turn:`/`turns:` URLs) and `TURN_SHARED_SECRET` to the TURN provider's REST
+shared-secret values in Netlify's private environment variables, then
+redeploy. Do not prefix the secret with `NEXT_PUBLIC_`. The app issues
+temporary one-hour credentials through an authenticated server endpoint.
 
 ## AI provider setup
 
@@ -86,8 +105,10 @@ endpoint's web-search modes.
    require Tavily.
 5. Apply the SQL files in `supabase/migrations/` to the same Supabase project,
    in filename order.
+6. Optionally set `TURN_SERVER_URLS` and `TURN_SHARED_SECRET` to enable
+   reliable cross-network one-to-one voice calls.
 
-Keep `GEMINI_API_KEY` and `TAVILY_API_KEY` private: do not prefix them with
-`NEXT_PUBLIC_` or expose them in client-side code. Add all four values to the
-Netlify site's environment variables before deploying. AI chat requires a
-signed-in, email-confirmed account.
+Keep `GEMINI_API_KEY`, `TAVILY_API_KEY`, and `TURN_SHARED_SECRET` private: do
+not prefix them with `NEXT_PUBLIC_` or expose them in client-side code. Add the
+required values to the Netlify site's environment variables before deploying.
+AI chat requires a signed-in, email-confirmed account.

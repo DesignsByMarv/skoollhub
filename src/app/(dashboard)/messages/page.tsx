@@ -2,8 +2,9 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ArrowLeft, FileText, ImagePlus, LoaderCircle, MessageCircle, Paperclip, Plus, Search, Send, UserRoundPlus, Video, X } from 'lucide-react';
+import { ArrowLeft, FileText, ImagePlus, LoaderCircle, MessageCircle, Mic, Paperclip, Plus, Search, Send, Square, UserRoundPlus, Video, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import VoiceCallButton from '@/components/messages/VoiceCallButton';
 
 type Contact = {
   id: string;
@@ -68,8 +69,14 @@ function MessagesContent() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const createdForUserRef = useRef('');
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<BlobPart[]>([]);
+  const recordingTimerRef = useRef<number | null>(null);
 
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedId) ?? null;
   const visibleMessages = messages.filter((message) => message.chat_id === selectedId);
@@ -238,6 +245,12 @@ function MessagesContent() {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, selectedId]);
 
+  useEffect(() => () => {
+    if (recordingTimerRef.current !== null) window.clearInterval(recordingTimerRef.current);
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
   const sendMessage = async (payload: { content?: string; media_url?: string; message_type?: Message['message_type']; document_name?: string }) => {
     if (!selectedId || sending) return;
     setSending(true);
@@ -325,6 +338,56 @@ function MessagesContent() {
     }
   };
 
+  const startVoiceNote = async () => {
+    if (!selectedId || recording || uploading) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Voice recording is not supported by this browser. Try a recent browser over HTTPS.');
+      return;
+    }
+    try {
+      setError('');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      const preferredType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+        .find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+      const recorder = preferredType
+        ? new MediaRecorder(stream, { mimeType: preferredType })
+        : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      recordingChunksRef.current = [];
+      setRecordingSeconds(0);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordingChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        recordingChunksRef.current = [];
+        recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+        if (blob.size > 0) {
+          const extension = blob.type.includes('mp4') ? 'm4a' : 'webm';
+          void handleFile(new File([blob], `voice-note-${Date.now()}.${extension}`, { type: blob.type }));
+        }
+      };
+      recorder.start();
+      setRecording(true);
+      recordingTimerRef.current = window.setInterval(() => setRecordingSeconds((seconds) => seconds + 1), 1000);
+    } catch (recordError) {
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+      recordingStreamRef.current = null;
+      setError(recordError instanceof Error ? recordError.message : 'Could not access your microphone.');
+    }
+  };
+
+  const stopVoiceNote = () => {
+    if (recordingTimerRef.current !== null) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    setRecording(false);
+  };
+
   const filteredConversations = conversations.filter((conversation) =>
     `${conversation.contact.full_name} ${conversation.contact.username}`.toLowerCase().includes(search.toLowerCase())
   );
@@ -401,6 +464,14 @@ function MessagesContent() {
               <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">{selectedConversation.contact.full_name}</h2>
               <p className="text-xs text-slate-500 dark:text-zinc-400">@{selectedConversation.contact.username}</p>
             </div>
+            <div className="ml-auto flex items-center gap-1">
+              <VoiceCallButton
+                chatId={selectedConversation.id}
+                currentUserId={currentUserId}
+                recipientId={selectedConversation.contact.id}
+                recipientName={selectedConversation.contact.full_name}
+              />
+            </div>
           </header>
 
           {error && <p role="alert" className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
@@ -433,6 +504,21 @@ function MessagesContent() {
           </div>
 
           <form onSubmit={handleSubmit} className="flex items-end gap-2 border-t border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <button
+              type="button"
+              onClick={() => recording ? stopVoiceNote() : void startVoiceNote()}
+              disabled={uploading || sending}
+              aria-label={recording ? 'Stop and send voice note' : 'Record voice note'}
+              title={recording ? `Stop recording (${recordingSeconds}s)` : 'Record voice note'}
+              className={`relative rounded-xl p-2.5 transition disabled:opacity-50 ${recording ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300' : 'text-slate-500 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-zinc-800'}`}
+            >
+              {recording ? <Square size={19} fill="currentColor" /> : <Mic size={19} />}
+            </button>
+            {recording && (
+              <span role="status" className="shrink-0 text-xs font-medium tabular-nums text-rose-600 dark:text-rose-300">
+                {Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:{(recordingSeconds % 60).toString().padStart(2, '0')}
+              </span>
+            )}
             <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 transition hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-zinc-800" title="Attach photo, video, audio, or document">
               {uploading ? <LoaderCircle size={19} className="animate-spin" /> : <Paperclip size={19} />}
               <input

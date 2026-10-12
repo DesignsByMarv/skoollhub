@@ -4,12 +4,16 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, CircleUserRound, MessageCircle, Settings } from 'lucide-react';
+import NearbyPlaces from '@/components/feed/NearbyPlaces';
 
 type MiniProfile = {
   full_name: string;
   username: string;
   avatar_url: string | null;
-  school?: { name: string } | null;
+  school?: { name: string; city: string; state: string } | null;
+  location_latitude?: number | null;
+  location_longitude?: number | null;
+  location_sharing_enabled?: boolean;
 };
 
 export default function RightSidebar() {
@@ -33,8 +37,8 @@ export default function RightSidebar() {
   }, []);
 
   return (
-    <aside className="space-y-5 pt-2">
-      <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <aside className="w-full space-y-5 pt-2 lg:w-80">
+      <section className="hidden rounded-xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 lg:block">
         {profile ? (
           <div className="flex items-center gap-3">
             <Link href="/profile" aria-label="View your profile" className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-sm font-bold text-white">
@@ -58,7 +62,17 @@ export default function RightSidebar() {
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      {profile && (
+        <NearbyPlaces
+          city={profile.school?.city}
+          state={profile.school?.state}
+          latitude={profile.location_latitude}
+          longitude={profile.location_longitude}
+          locationSharingEnabled={profile.location_sharing_enabled}
+        />
+      )}
+
+      <section className="hidden rounded-xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 lg:block">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-bold text-slate-500 dark:text-zinc-400">Your account</h2>
           <Link href="/settings" className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-300">Manage</Link>
@@ -79,7 +93,7 @@ export default function RightSidebar() {
         </div>
       </section>
 
-      <p className="px-1 text-[10px] leading-5 text-slate-400">
+      <p className="hidden px-1 text-[10px] leading-5 text-slate-400 lg:block">
         SkoollHub · A community built for campus life
       </p>
     </aside>

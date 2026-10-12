@@ -52,18 +52,30 @@ team addresses and has a low sending limit. A resend button is available after
 sign-up; repeated attempts are still subject to Supabase's email rate limits.
 The `/auth/confirm` route remains available for any existing confirmation links.
 
-## AI assistant setup
+## Campus feed, profiles, and messaging
 
-The `/ai-assistant` page uses Gemini for chat and the existing Supabase
-authentication/database for private, saved conversation history. Web search,
-campus/social search, and research modes use Tavily to gather public sources
-before Gemini responds.
+The app's **Home** navigation opens `/feed`; selecting Home while already on
+the feed reloads it. `/dashboard` redirects to the same feed. Housing,
+roommate matching, classes/timetable, and the AI assistant currently show an
+"not available right now" notice.
 
-The dashboard and `/feed` share the same Supabase-backed campus feed, including
-category filters, posts, likes, comments, bookmarks, direct image/video
-uploads, and opt-in device location sharing. The campus feed migrations also
-create missing student profiles for existing email accounts and new signups
-so they can publish posts and comments.
+The feed supports posts, likes, comments, bookmarks, image/video uploads, and
+optional location sharing. Comment authors link to their public profiles.
+Profiles show a post grid, follower/following counts, and follow/message
+actions. Feed suggestions let students discover and follow other students.
+
+Direct chats persist text and file messages in Supabase and use Supabase
+Realtime for incoming messages. Voice/video calling is not currently
+implemented. Apply all migrations in `supabase/migrations`, including
+`20261012000000_social_chat_realtime.sql`, before using follows, direct chats,
+or live message updates in production.
+
+## AI provider setup
+
+The AI page is temporarily unavailable in the app. The `/api/ai` endpoint is
+still present; it requires `GEMINI_API_KEY` to run. `GEMINI_MODEL` is optional
+and defaults to `gemini-2.5-flash`. `TAVILY_API_KEY` is only needed by the
+endpoint's web-search modes.
 
 1. Copy `.env.example` to `.env.local`.
 2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for your

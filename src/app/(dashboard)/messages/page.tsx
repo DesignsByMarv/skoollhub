@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, FileText, ImagePlus, LoaderCircle, MessageCircle, Paperclip, Send, Video } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -49,7 +49,6 @@ export default function MessagesPage() {
 }
 
 function MessagesContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedUserId = searchParams.get('user');
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -67,6 +66,7 @@ function MessagesContent() {
   const createdForUserRef = useRef('');
 
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedId) ?? null;
+  const visibleMessages = messages.filter((message) => message.chat_id === selectedId);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch('/api/messages/conversations', { cache: 'no-store' });
@@ -124,10 +124,7 @@ function MessagesContent() {
   }, [loadConversations, requestedUserId]);
 
   useEffect(() => {
-    if (!selectedId) {
-      setMessages([]);
-      return;
-    }
+    if (!selectedId) return;
     let active = true;
     setLoadingMessages(true);
     async function loadMessages() {
@@ -311,7 +308,7 @@ function MessagesContent() {
           <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-4 dark:bg-zinc-950">
             {loadingMessages ? (
               <div className="flex justify-center py-8 text-sm text-slate-500"><LoaderCircle size={17} className="animate-spin" /></div>
-            ) : messages.length ? messages.map((message) => {
+            ) : visibleMessages.length ? visibleMessages.map((message) => {
               const isMine = message.sender_id === currentUserId;
               return (
                 <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>

@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
+type MessagePreview = {
+  id: string;
+  chat_id: string;
+  content: string | null;
+  media_url: string | null;
+  message_type: string;
+  created_at: string;
+  sender_id: string;
+};
+
 function errorResponse(error: string, status: number) {
   return NextResponse.json({ error }, { status });
 }
@@ -55,8 +65,8 @@ export async function GET() {
     }
 
     const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-    const lastMessageByChat = new Map<string, (typeof messagesResult.data)[number]>();
-    for (const message of messagesResult.data ?? []) {
+    const lastMessageByChat = new Map<string, MessagePreview>();
+    for (const message of (messagesResult.data ?? []) as MessagePreview[]) {
       if (!lastMessageByChat.has(message.chat_id)) lastMessageByChat.set(message.chat_id, message);
     }
     const conversations = chatIds.map((chatId) => {

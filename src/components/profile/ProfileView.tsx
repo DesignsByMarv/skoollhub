@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { ArrowUpRight, BadgeCheck, CalendarDays, GraduationCap, LoaderCircle, MapPin, MessageCircle, Settings, UserPlus, Users, X } from 'lucide-react';
 
 type Profile = {
@@ -42,7 +41,6 @@ function initials(name: string) {
 }
 
 export default function ProfileView({ username }: { username?: string }) {
-  const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);

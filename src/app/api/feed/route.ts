@@ -71,6 +71,7 @@ export async function GET(request: Request) {
           const profile = profiles.get(comment.author_id);
           return {
             id: comment.id,
+            authorId: comment.author_id,
             author: profile?.full_name ?? 'Student',
             handle: profile?.username ?? 'student',
             text: comment.content,

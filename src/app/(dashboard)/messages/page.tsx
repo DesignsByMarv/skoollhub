@@ -1,627 +1,385 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import Image from 'next/image';
-import {
-  MessageCircle,
-  Phone,
-  Video,
-  Paperclip,
-  Send,
-  Search,
-  MoreVertical,
-  Smile,
-  Plus,
-  File,
-  Image as ImageIcon,
-  Music,
-  X,
-  LoaderCircle,
-} from 'lucide-react';
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft, FileText, ImagePlus, LoaderCircle, MessageCircle, Paperclip, Send, Video } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
-interface Message {
+type Contact = {
   id: string;
-  sender: 'me' | 'them';
-  text?: string;
-  image?: string;
-  video?: string;
-  document?: { name: string; url: string };
-  call?: { type: 'voice' | 'video'; duration: number };
-  timestamp: string;
+  full_name: string;
+  username: string;
+  avatar_url: string | null;
+};
+type Message = {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  content: string | null;
+  media_url: string | null;
+  message_type: 'text' | 'image' | 'video' | 'audio' | 'document';
+  document_name: string | null;
+  created_at: string;
+};
+type Conversation = {
+  id: string;
+  contact: Contact;
+  last_message: Message | null;
+};
+
+async function responseError(response: Response) {
+  const data = await response.json().catch(() => null) as { error?: string } | null;
+  return data?.error || 'Something went wrong. Please try again.';
 }
 
-interface Contact {
-  id: string;
-  name: string;
-  avatar?: string;
-  status: 'online' | 'offline';
-  lastMessage: string;
-  lastMessageTime: string;
-  unreadCount: number;
-  messages: Message[];
+function formatTime(timestamp: string) {
+  return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'S';
 }
 
 export default function MessagesPage() {
-  const [contacts, setContacts] = useState<Contact[]>([
-    {
-      id: '1',
-      name: 'Hostel Plug OAU',
-      avatar: '🏠',
-      status: 'online',
-      lastMessage: 'The self-contain near Asherifa is available',
-      lastMessageTime: '10:42 AM',
-      unreadCount: 2,
-      messages: [
-        { id: 'm1', sender: 'them', text: 'Hello! Are you looking for accommodation?', timestamp: '10:40 AM' },
-        { id: 'm2', sender: 'me', text: 'Yes! Is it still available?', timestamp: '10:41 AM' },
-        { id: 'm3', sender: 'them', text: 'The self-contain near Asherifa is available', timestamp: '10:42 AM' },
-      ],
-    },
-    {
-      id: '2',
-      name: 'Tobi (Roommate)',
-      avatar: '👨‍🎓',
-      status: 'online',
-      lastMessage: 'Lets link up! Same course.',
-      lastMessageTime: 'Yesterday',
-      unreadCount: 0,
-      messages: [
-        { id: 'm10', sender: 'me', text: 'Hey Tobi! Saw your profile.', timestamp: 'Yesterday' },
-        { id: 'm11', sender: 'them', text: 'Lets link up! Same course.', timestamp: 'Yesterday' },
-      ],
-    },
-  ]);
+  return (
+    <Suspense fallback={<div className="flex h-[calc(100vh-4rem)] items-center justify-center"><LoaderCircle className="animate-spin" /></div>}>
+      <MessagesContent />
+    </Suspense>
+  );
+}
 
-  const [selectedContactId, setSelectedContactId] = useState<string>('1');
+function MessagesContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedUserId = searchParams.get('user');
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showMediaMenu, setShowMediaMenu] = useState(false);
-  const [ongoingCall, setOngoingCall] = useState<{ type: 'voice' | 'video'; with: string; duration: number } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
-  const documentInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState('');
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const endOfMessagesRef = useRef<HTMLDivElement>(null);
+  const createdForUserRef = useRef('');
 
-  const selectedContact = contacts.find(c => c.id === selectedContactId);
+  const selectedConversation = conversations.find((conversation) => conversation.id === selectedId) ?? null;
+
+  const loadConversations = useCallback(async () => {
+    const response = await fetch('/api/messages/conversations', { cache: 'no-store' });
+    if (!response.ok) throw new Error(await responseError(response));
+    const data = await response.json() as { conversations: Conversation[] };
+    setConversations(data.conversations);
+    return data.conversations;
+  }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [selectedContact?.messages]);
-
-  const handleSendMessage = (text: string) => {
-    if (!text.trim() || !selectedContact) return;
-
-    setContacts(contacts.map(c => {
-      if (c.id === selectedContactId) {
-        return {
-          ...c,
-          messages: [
-            ...c.messages,
-            {
-              id: `m${Date.now()}`,
-              sender: 'me',
-              text: text.trim(),
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            },
-          ],
-          lastMessage: text.trim(),
-          lastMessageTime: 'now',
-        };
+    let active = true;
+    const supabase = createClient();
+    async function initialize() {
+      try {
+        const [{ data: { user } }, response] = await Promise.all([
+          supabase.auth.getUser(),
+          fetch('/api/messages/conversations', { cache: 'no-store' }),
+        ]);
+        if (!response.ok) throw new Error(await responseError(response));
+        const data = await response.json() as { conversations: Conversation[] };
+        if (!active) return;
+        setCurrentUserId(user?.id ?? '');
+        setConversations(data.conversations);
+        const existing = requestedUserId
+          ? data.conversations.find((conversation) => conversation.contact.id === requestedUserId)
+          : null;
+        if (existing) {
+          setSelectedId(existing.id);
+        } else if (requestedUserId && requestedUserId !== user?.id && createdForUserRef.current !== requestedUserId) {
+          createdForUserRef.current = requestedUserId;
+          const createResponse = await fetch('/api/messages/conversations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ participant_ids: [requestedUserId] }),
+          });
+          if (!createResponse.ok) throw new Error(await responseError(createResponse));
+          const created = await createResponse.json() as { conversation: { id: string } };
+          if (active) {
+            await loadConversations();
+            setSelectedId(created.conversation.id);
+          }
+        } else if (data.conversations[0]) {
+          setSelectedId(data.conversations[0].id);
+        }
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load messages.');
+      } finally {
+        if (active) setLoadingConversations(false);
       }
-      return c;
-    }));
+    }
+    void initialize();
+    return () => {
+      active = false;
+    };
+  }, [loadConversations, requestedUserId]);
 
-    setMessageText('');
+  useEffect(() => {
+    if (!selectedId) {
+      setMessages([]);
+      return;
+    }
+    let active = true;
+    setLoadingMessages(true);
+    async function loadMessages() {
+      try {
+        const response = await fetch(`/api/messages?chat_id=${encodeURIComponent(selectedId)}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(await responseError(response));
+        const data = await response.json() as { messages: Message[] };
+        if (active) setMessages(data.messages);
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load message history.');
+      } finally {
+        if (active) setLoadingMessages(false);
+      }
+    }
+    void loadMessages();
+    return () => {
+      active = false;
+    };
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`chat:${selectedId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${selectedId}`,
+      }, (payload) => {
+        const incoming = payload.new as Message;
+        setMessages((current) => current.some((message) => message.id === incoming.id)
+          ? current
+          : [...current, incoming]);
+        void loadConversations().catch((loadError) => {
+          setError(loadError instanceof Error ? loadError.message : 'Could not refresh conversations.');
+        });
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setError('Live message updates are unavailable. Refresh the page to check for new messages.');
+        }
+      });
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadConversations, selectedId]);
+
+  useEffect(() => {
+    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, selectedId]);
+
+  const sendMessage = async (payload: { content?: string; media_url?: string; message_type?: Message['message_type']; document_name?: string }) => {
+    if (!selectedId || sending) return;
+    setSending(true);
+    setError('');
+    try {
+      const response = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: selectedId, ...payload }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
+      const data = await response.json() as { message: Message };
+      setMessages((current) => current.some((message) => message.id === data.message.id)
+        ? current
+        : [...current, data.message]);
+      setMessageText('');
+      await loadConversations();
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Could not send your message.');
+    } finally {
+      setSending(false);
+    }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedContact) return;
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const content = messageText.trim();
+    if (content) await sendMessage({ content, message_type: 'text' });
+  };
 
-    setIsUploading(true);
+  const handleFile = async (file: File | undefined) => {
+    if (!file || !selectedId) return;
+    if (file.size > 50 * 1024 * 1024) {
+      setError('Choose a file smaller than 50 MB.');
+      return;
+    }
+    const messageType: Message['message_type'] = file.type.startsWith('image/')
+      ? 'image'
+      : file.type.startsWith('video/')
+        ? 'video'
+        : file.type.startsWith('audio/')
+          ? 'audio'
+          : 'document';
+    setUploading(true);
+    setError('');
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('type', 'message');
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      const uploadResponse = await fetch('/api/upload', { method: 'POST', body: formData });
+      if (!uploadResponse.ok) throw new Error(await responseError(uploadResponse));
+      const upload = await uploadResponse.json() as { url: string; filename: string };
+      await sendMessage({
+        media_url: upload.url,
+        message_type: messageType,
+        document_name: messageType === 'document' ? upload.filename : undefined,
       });
-
-      if (response.ok) {
-        const data = await response.json() as { url: string };
-
-        setContacts(contacts.map(c => {
-          if (c.id === selectedContactId) {
-            return {
-              ...c,
-              messages: [
-                ...c.messages,
-                {
-                  id: `m${Date.now()}`,
-                  sender: 'me',
-                  image: data.url,
-                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                },
-              ],
-            };
-          }
-          return c;
-        }));
-      }
-    } catch (error) {
-      console.error('Image upload failed:', error);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Could not upload this file.');
     } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setUploading(false);
     }
   };
 
-  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedContact) return;
-
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', 'message');
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        const data = await response.json() as { url: string };
-
-        setContacts(contacts.map(c => {
-          if (c.id === selectedContactId) {
-            return {
-              ...c,
-              messages: [
-                ...c.messages,
-                {
-                  id: `m${Date.now()}`,
-                  sender: 'me',
-                  video: data.url,
-                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                },
-              ],
-            };
-          }
-          return c;
-        }));
-      }
-    } catch (error) {
-      console.error('Video upload failed:', error);
-    } finally {
-      setIsUploading(false);
-      if (videoInputRef.current) videoInputRef.current.value = '';
-    }
-  };
-
-  const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedContact) return;
-
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', 'message');
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        const data = await response.json() as { url: string; filename: string };
-
-        setContacts(contacts.map(c => {
-          if (c.id === selectedContactId) {
-            return {
-              ...c,
-              messages: [
-                ...c.messages,
-                {
-                  id: `m${Date.now()}`,
-                  sender: 'me',
-                  document: { name: data.filename, url: data.url },
-                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                },
-              ],
-            };
-          }
-          return c;
-        }));
-      }
-    } catch (error) {
-      console.error('Document upload failed:', error);
-    } finally {
-      setIsUploading(false);
-      if (documentInputRef.current) documentInputRef.current.value = '';
-    }
-  };
-
-  const startCall = (type: 'voice' | 'video') => {
-    if (!selectedContact) return;
-    setOngoingCall({ type, with: selectedContact.name, duration: 0 });
-
-    // Simulate call duration
-    const interval = setInterval(() => {
-      setOngoingCall(prev => prev ? { ...prev, duration: prev.duration + 1 } : null);
-    }, 1000);
-
-    // Auto-end call after 30 seconds for demo
-    setTimeout(() => {
-      clearInterval(interval);
-      if (selectedContact) {
-        setContacts(contacts.map(c => {
-          if (c.id === selectedContactId) {
-            return {
-              ...c,
-              messages: [
-                ...c.messages,
-                {
-                  id: `m${Date.now()}`,
-                  sender: 'me',
-                  call: { type, duration: 30 },
-                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                },
-              ],
-            };
-          }
-          return c;
-        }));
-      }
-      setOngoingCall(null);
-    }, 30000);
-  };
-
-  const filteredContacts = contacts.filter(c =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredConversations = conversations.filter((conversation) =>
+    `${conversation.contact.full_name} ${conversation.contact.username}`.toLowerCase().includes(search.toLowerCase())
   );
 
-  const emojis = ['😀', '😂', '❤️', '🔥', '👍', '🎉', '😍', '🙏', '😢', '😡'];
-
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-zinc-900">
-      {/* Sidebar */}
-      <div className="w-full sm:w-80 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-200 dark:border-zinc-800">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Messages</h1>
-          <div className="relative">
-            <Search size={18} className="absolute left-3 top-2.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search conversations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-            />
-          </div>
+    <section className="mx-auto flex h-[calc(100vh-4rem)] min-h-[32rem] max-w-7xl overflow-hidden bg-white dark:bg-zinc-950 sm:m-4 sm:h-[calc(100vh-6rem)] sm:rounded-2xl sm:border sm:border-slate-200 sm:dark:border-zinc-800">
+      <aside className={`w-full shrink-0 flex-col border-r border-slate-200 dark:border-zinc-800 sm:flex sm:w-80 ${selectedConversation ? 'hidden' : 'flex'}`}>
+        <div className="border-b border-slate-200 p-4 dark:border-zinc-800">
+          <h1 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Messages</h1>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search conversations"
+            aria-label="Search conversations"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+          />
         </div>
-
-        {/* Contacts List */}
         <div className="flex-1 overflow-y-auto">
-          {filteredContacts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500 dark:text-zinc-400">
-              <MessageCircle size={40} className="mb-2 opacity-30" />
-              <p className="text-sm">No conversations found</p>
+          {loadingConversations ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><LoaderCircle size={17} className="animate-spin" />Loading conversations</div>
+          ) : filteredConversations.length ? filteredConversations.map((conversation) => (
+            <button
+              key={conversation.id}
+              type="button"
+              onClick={() => setSelectedId(conversation.id)}
+              className={`flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left transition dark:border-zinc-900 ${conversation.id === selectedId ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'hover:bg-slate-50 dark:hover:bg-zinc-900'}`}
+            >
+              {conversation.contact.avatar_url
+                ? <img src={conversation.contact.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover" />
+                : <span className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">{initials(conversation.contact.full_name)}</span>}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-slate-900 dark:text-white">{conversation.contact.full_name}</span>
+                <span className="mt-1 block truncate text-xs text-slate-500 dark:text-zinc-400">
+                  {conversation.last_message?.content || (conversation.last_message?.message_type !== 'text' ? 'Attachment' : 'Start a conversation')}
+                </span>
+              </span>
+              {conversation.last_message && <time className="self-start pt-1 text-[10px] text-slate-400">{formatTime(conversation.last_message.created_at)}</time>}
+            </button>
+          )) : (
+            <div className="px-6 py-12 text-center">
+              <MessageCircle size={28} className="mx-auto text-slate-300" />
+              <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-zinc-200">No conversations yet</p>
+              <p className="mt-1 text-xs text-slate-500">Open a student profile and tap Message to start chatting.</p>
             </div>
-          ) : (
-            filteredContacts.map(contact => (
-              <button
-                key={contact.id}
-                onClick={() => setSelectedContactId(contact.id)}
-                className={`w-full p-3 border-b border-slate-100 text-left transition dark:border-zinc-800 ${
-                  selectedContactId === contact.id
-                    ? 'bg-indigo-50 dark:bg-indigo-950/40'
-                    : 'hover:bg-slate-50 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl flex-shrink-0 ${
-                    contact.status === 'online'
-                      ? 'bg-green-100 dark:bg-green-900/30'
-                      : 'bg-slate-100 dark:bg-zinc-800'
-                  }`}>
-                    {contact.avatar}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-slate-900 dark:text-white truncate">{contact.name}</h3>
-                      {contact.unreadCount > 0 && (
-                        <span className="ml-2 bg-indigo-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
-                          {contact.unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-zinc-400 truncate mt-1">{contact.lastMessage}</p>
-                    <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">{contact.lastMessageTime}</p>
-                  </div>
-                </div>
-              </button>
-            ))
           )}
         </div>
-      </div>
+      </aside>
 
-      {/* Chat Area */}
-      {selectedContact ? (
-        <div className="hidden sm:flex flex-col flex-1">
-          {/* Chat Header */}
-          <div className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg bg-indigo-100 dark:bg-indigo-900/30">
-                {selectedContact.avatar}
-              </div>
-              <div>
-                <h2 className="font-semibold text-slate-900 dark:text-white">{selectedContact.name}</h2>
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  {selectedContact.status === 'online' ? '🟢 Online' : '⚪ Offline'}
-                </p>
-              </div>
+      {selectedConversation ? (
+        <div className={`min-w-0 flex-1 flex-col ${selectedConversation ? 'flex' : 'hidden'}`}>
+          <header className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 dark:border-zinc-800">
+            <button type="button" onClick={() => setSelectedId('')} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 sm:hidden" aria-label="Back to conversations"><ArrowLeft size={19} /></button>
+            {selectedConversation.contact.avatar_url
+              ? <img src={selectedConversation.contact.avatar_url} alt="" className="h-10 w-10 rounded-full object-cover" />
+              : <span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">{initials(selectedConversation.contact.full_name)}</span>}
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">{selectedConversation.contact.full_name}</h2>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">@{selectedConversation.contact.username}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => startCall('voice')}
-                className="p-2.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
-                title="Start voice call"
-              >
-                <Phone size={20} className="text-slate-600 dark:text-zinc-300" />
-              </button>
-              <button
-                onClick={() => startCall('video')}
-                className="p-2.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
-                title="Start video call"
-              >
-                <Video size={20} className="text-slate-600 dark:text-zinc-300" />
-              </button>
-              <button className="p-2.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition">
-                <MoreVertical size={20} className="text-slate-600 dark:text-zinc-300" />
-              </button>
-            </div>
+          </header>
+
+          {error && <p role="alert" className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
+          <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-4 dark:bg-zinc-950">
+            {loadingMessages ? (
+              <div className="flex justify-center py-8 text-sm text-slate-500"><LoaderCircle size={17} className="animate-spin" /></div>
+            ) : messages.length ? messages.map((message) => {
+              const isMine = message.sender_id === currentUserId;
+              return (
+                <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                  <article className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 shadow-sm sm:max-w-[70%] ${isMine ? 'rounded-br-md bg-indigo-600 text-white' : 'rounded-bl-md border border-slate-200 bg-white text-slate-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100'}`}>
+                    {message.message_type === 'image' && message.media_url && <a href={message.media_url} target="_blank" rel="noreferrer"><img src={message.media_url} alt="Shared image" className="mb-2 max-h-72 rounded-lg object-contain" /></a>}
+                    {message.message_type === 'video' && message.media_url && <video src={message.media_url} controls className="mb-2 max-h-72 rounded-lg" />}
+                    {message.message_type === 'audio' && message.media_url && <audio src={message.media_url} controls className="mb-2 max-w-full" />}
+                    {message.message_type === 'document' && message.media_url && (
+                      <a href={message.media_url} target="_blank" rel="noreferrer" className="mb-2 flex items-center gap-2 underline">
+                        <FileText size={17} />{message.document_name || 'Open document'}
+                      </a>
+                    )}
+                    {message.content && <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>}
+                    <time className={`mt-1 block text-right text-[10px] ${isMine ? 'text-indigo-100' : 'text-slate-400'}`}>{formatTime(message.created_at)}</time>
+                  </article>
+                </div>
+              );
+            }) : (
+              <div className="flex h-full flex-col items-center justify-center text-center text-slate-400">
+                <MessageCircle size={32} />
+                <p className="mt-3 text-sm">Send a message to start this chat.</p>
+              </div>
+            )}
+            <div ref={endOfMessagesRef} />
           </div>
 
-          {/* Call Overlay */}
-          {ongoingCall && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-lg">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 text-center">
-                <div className="text-5xl mb-4">
-                  {ongoingCall.type === 'video' ? '📹' : '📞'}
-                </div>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
-                  {ongoingCall.type === 'video' ? 'Video Call' : 'Voice Call'}
-                </h3>
-                <p className="text-slate-600 dark:text-zinc-300 mb-4">{ongoingCall.with}</p>
-                <div className="text-3xl font-mono text-indigo-600 dark:text-indigo-400 mb-6">
-                  {Math.floor(ongoingCall.duration / 60).toString().padStart(2, '0')}:
-                  {(ongoingCall.duration % 60).toString().padStart(2, '0')}
-                </div>
-                <button
-                  onClick={() => setOngoingCall(null)}
-                  className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-lg font-semibold transition"
-                >
-                  End Call
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {selectedContact.messages.map(message => (
-              <div
-                key={message.id}
-                className={`flex ${message.sender === 'me' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl ${
-                    message.sender === 'me'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-100 text-slate-900 dark:bg-zinc-800 dark:text-white'
-                  }`}
-                >
-                  {message.text && <p className="break-words">{message.text}</p>}
-
-                  {message.image && (
-                    <div className="relative w-48 h-48 rounded-lg overflow-hidden mt-2">
-                      <Image
-                        src={message.image}
-                        alt="Shared image"
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                  )}
-
-                  {message.video && (
-                    <video
-                      src={message.video}
-                      controls
-                      className="w-48 h-auto rounded-lg mt-2"
-                    />
-                  )}
-
-                  {message.document && (
-                    <a
-                      href={message.document.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`flex items-center gap-2 mt-2 p-2 rounded-lg ${
-                        message.sender === 'me'
-                          ? 'bg-indigo-700 hover:bg-indigo-800'
-                          : 'bg-white hover:bg-slate-50 dark:bg-zinc-700 dark:hover:bg-zinc-600'
-                      }`}
-                    >
-                      <File size={18} />
-                      <span className="text-sm truncate">{message.document.name}</span>
-                    </a>
-                  )}
-
-                  {message.call && (
-                    <div className="flex items-center gap-2">
-                      {message.call.type === 'video' ? (
-                        <Video size={16} />
-                      ) : (
-                        <Phone size={16} />
-                      )}
-                      <span className="text-sm">
-                        {message.call.type === 'video' ? 'Video' : 'Voice'} call • {Math.floor(message.call.duration / 60)}m
-                        {message.call.duration % 60}s
-                      </span>
-                    </div>
-                  )}
-
-                  <p
-                    className={`text-xs mt-2 ${
-                      message.sender === 'me' ? 'text-indigo-100' : 'text-slate-500 dark:text-zinc-400'
-                    }`}
-                  >
-                    {message.timestamp}
-                  </p>
-                </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input Area */}
-          <div className="bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 p-4">
-            <div className="flex items-end gap-2">
-              {/* Media Menu */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowMediaMenu(!showMediaMenu)}
-                  className="p-2.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
-                >
-                  <Plus size={20} className="text-slate-600 dark:text-zinc-300" />
-                </button>
-
-                {showMediaMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-zinc-800 rounded-lg shadow-lg border border-slate-200 dark:border-zinc-700">
-                    <button
-                      onClick={() => {
-                        fileInputRef.current?.click();
-                        setShowMediaMenu(false);
-                      }}
-                      className="flex items-center gap-2 w-full px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-900 dark:text-white text-sm"
-                    >
-                      <ImageIcon size={18} />
-                      Image
-                    </button>
-                    <button
-                      onClick={() => {
-                        videoInputRef.current?.click();
-                        setShowMediaMenu(false);
-                      }}
-                      className="flex items-center gap-2 w-full px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-900 dark:text-white text-sm border-t border-slate-200 dark:border-zinc-700"
-                    >
-                      <Video size={18} />
-                      Video
-                    </button>
-                    <button
-                      onClick={() => {
-                        documentInputRef.current?.click();
-                        setShowMediaMenu(false);
-                      }}
-                      className="flex items-center gap-2 w-full px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-700 text-slate-900 dark:text-white text-sm border-t border-slate-200 dark:border-zinc-700"
-                    >
-                      <File size={18} />
-                      Document
-                    </button>
-                  </div>
-                )}
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageUpload}
-                />
-                <input
-                  ref={videoInputRef}
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  onChange={handleVideoUpload}
-                />
-                <input
-                  ref={documentInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={handleDocumentUpload}
-                />
-              </div>
-
-              {/* Message Input */}
+          <form onSubmit={handleSubmit} className="flex items-end gap-2 border-t border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 transition hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-zinc-800" title="Attach photo, video, audio, or document">
+              {uploading ? <LoaderCircle size={19} className="animate-spin" /> : <Paperclip size={19} />}
               <input
-                type="text"
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(messageText)}
-                placeholder="Type a message..."
-                className="flex-1 px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                type="file"
+                className="sr-only"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                disabled={uploading || !selectedConversation}
+                onChange={(event) => {
+                  void handleFile(event.target.files?.[0]);
+                  event.target.value = '';
+                }}
               />
-
-              {/* Emoji Picker */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="p-2.5 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition"
-                >
-                  <Smile size={20} className="text-slate-600 dark:text-zinc-300" />
-                </button>
-
-                {showEmojiPicker && (
-                  <div className="absolute bottom-full right-0 mb-2 bg-white dark:bg-zinc-800 rounded-lg shadow-lg p-3 grid grid-cols-5 gap-2 border border-slate-200 dark:border-zinc-700">
-                    {emojis.map(emoji => (
-                      <button
-                        key={emoji}
-                        onClick={() => {
-                          setMessageText(messageText + emoji);
-                          setShowEmojiPicker(false);
-                        }}
-                        className="text-2xl hover:scale-125 transition"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Send Button */}
-              <button
-                onClick={() => handleSendMessage(messageText)}
-                disabled={!messageText.trim() || isUploading}
-                className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition"
-              >
-                {isUploading ? (
-                  <LoaderCircle size={20} className="animate-spin" />
-                ) : (
-                  <Send size={20} />
-                )}
-              </button>
-            </div>
-          </div>
+            </label>
+            <label className="hidden cursor-pointer rounded-xl p-2.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 sm:block" title="Attach photo or video">
+              <ImagePlus size={19} />
+              <input type="file" className="sr-only" accept="image/*,video/*" disabled={uploading} onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ''; }} />
+            </label>
+            <label className="hidden cursor-pointer rounded-xl p-2.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 lg:block" title="Attach video">
+              <Video size={19} />
+              <input type="file" className="sr-only" accept="video/*" disabled={uploading} onChange={(event) => { void handleFile(event.target.files?.[0]); event.target.value = ''; }} />
+            </label>
+            <input
+              value={messageText}
+              onChange={(event) => setMessageText(event.target.value)}
+              maxLength={5000}
+              placeholder="Write a message…"
+              aria-label="Write a message"
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-indigo-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white"
+            />
+            <button type="submit" disabled={!messageText.trim() || sending || uploading} aria-label="Send message" className="rounded-xl bg-indigo-600 p-3 text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {sending ? <LoaderCircle size={18} className="animate-spin" /> : <Send size={18} />}
+            </button>
+          </form>
         </div>
       ) : (
-        <div className="hidden sm:flex flex-1 items-center justify-center text-slate-500 dark:text-zinc-400">
-          <div className="text-center">
-            <MessageCircle size={48} className="mx-auto mb-4 opacity-30" />
-            <p>Select a conversation to start messaging</p>
-          </div>
+        <div className="hidden flex-1 flex-col items-center justify-center text-center text-slate-400 sm:flex">
+          <MessageCircle size={44} />
+          <h2 className="mt-4 text-base font-semibold text-slate-700 dark:text-zinc-200">Your messages</h2>
+          <p className="mt-1 text-sm">Choose a conversation or open a student profile to start a new chat.</p>
         </div>
       )}
-    </div>
+    </section>
   );
 }

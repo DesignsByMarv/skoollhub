@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const tabs = [
-  { label: 'Home', href: '/dashboard', icon: '🏠' },
+  { label: 'Home', href: '/feed', icon: '🏠' },
   { label: 'Hostels', href: '/houses', icon: '🏢' },
   { label: 'Roommates', href: '/roommates', icon: '👥' },
   { label: 'Classes', href: '/timetable', icon: '📅' },
@@ -18,11 +18,17 @@ export default function MobileTabBar() {
     <div className="md:hidden fixed bottom-4 left-4 right-4 z-50">
       <nav className="ios-glass border border-black/5 dark:border-white/10 rounded-full px-3 py-2 flex items-center justify-around shadow-2xl">
         {tabs.map((tab) => {
-          const isActive = pathname === tab.href;
+          const isActive = pathname === tab.href || (tab.href === '/feed' && pathname === '/dashboard');
           return (
             <Link
               key={tab.href}
               href={tab.href}
+              onClick={(event) => {
+                if (tab.href === '/feed' && pathname === '/feed') {
+                  event.preventDefault();
+                  window.location.reload();
+                }
+              }}
               className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-full transition-all duration-200 ${
                 isActive
                   ? 'text-blue-600 dark:text-blue-400 font-bold scale-105'

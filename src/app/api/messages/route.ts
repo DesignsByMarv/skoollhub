@@ -1,109 +1,130 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
-export async function GET(request: NextRequest) {
+const messageFields = 'id, chat_id, sender_id, content, media_url, message_type, document_name, created_at';
+const messageTypes = new Set(['text', 'image', 'video', 'audio', 'document']);
+
+function errorResponse(error: string, status: number) {
+  return NextResponse.json({ error }, { status });
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function getUser() {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error) throw new Error(`Could not verify your session: ${error.message}`);
+  if (!user || !user.email_confirmed_at) return { supabase, user: null };
+  return { supabase, user };
+}
+
+export async function GET(request: Request) {
   try {
-    const supabase = await createServerSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { supabase, user } = await getUser();
+    if (!user) return errorResponse('Please sign in with a confirmed email.', 401);
+    const chatId = new URL(request.url).searchParams.get('chat_id');
+    if (!isUuid(chatId)) return errorResponse('Choose a valid conversation.', 400);
 
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { data: membership, error: membershipError } = await supabase
+      .from('chat_participants')
+      .select('chat_id')
+      .eq('chat_id', chatId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (membershipError) {
+      console.error('Chat membership query failed:', membershipError.message);
+      return errorResponse('Could not load this conversation.', 500);
     }
+    if (!membership) return errorResponse('You are not a participant in this conversation.', 403);
 
-    const conversationId = request.nextUrl.searchParams.get('conversation_id');
-    if (!conversationId) {
-      return NextResponse.json({ error: 'Missing conversation_id' }, { status: 400 });
-    }
-
-    // Get messages from conversation
     const { data: messages, error } = await supabase
       .from('messages')
-      .select(`
-        id,
-        sender_id,
-        content,
-        media_url,
-        media_type,
-        document_url,
-        document_name,
-        call_type,
-        call_duration,
-        created_at
-      `)
-      .eq('conversation_id', conversationId)
+      .select(messageFields)
+      .eq('chat_id', chatId)
       .order('created_at', { ascending: true })
-      .limit(100);
-
+      .limit(500);
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('Message history query failed:', error.message);
+      return errorResponse('Could not load message history.', 500);
     }
 
-    return NextResponse.json({ messages });
+    return NextResponse.json({ messages: messages ?? [] });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to fetch messages' },
-      { status: 500 }
-    );
+    console.error('Message history request failed:', error);
+    return errorResponse('Could not process your message history request.', 500);
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const supabase = await createServerSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { supabase, user } = await getUser();
+    if (!user) return errorResponse('Please sign in with a confirmed email.', 401);
 
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse('Request body must be valid JSON.', 400);
+    }
+    if (!body || typeof body !== 'object') return errorResponse('Invalid message.', 400);
+
+    const payload = body as Record<string, unknown>;
+    const chatId = payload.chat_id;
+    const content = typeof payload.content === 'string' ? payload.content.trim() : '';
+    const mediaUrl = typeof payload.media_url === 'string' ? payload.media_url : null;
+    const messageType = typeof payload.message_type === 'string' ? payload.message_type : 'text';
+    const documentName = typeof payload.document_name === 'string' ? payload.document_name.trim().slice(0, 255) : null;
+
+    if (!isUuid(chatId)) return errorResponse('Choose a valid conversation.', 400);
+    if (!messageTypes.has(messageType)) return errorResponse('Unsupported message type.', 400);
+    if (content.length > 5000) return errorResponse('Messages must be 5,000 characters or fewer.', 400);
+    if (!content && !mediaUrl) return errorResponse('Write a message or attach a file.', 400);
+    if (mediaUrl) {
+      try {
+        const parsedUrl = new URL(mediaUrl);
+        if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+          return errorResponse('Attachment URL is invalid.', 400);
+        }
+      } catch {
+        return errorResponse('Attachment URL is invalid.', 400);
+      }
     }
 
-    const body = await request.json() as {
-      conversation_id: string;
-      content?: string;
-      media_url?: string;
-      media_type?: string;
-      document_url?: string;
-      document_name?: string;
-      call_type?: 'voice' | 'video';
-      call_duration?: number;
-    };
-
-    const { conversation_id, content, media_url, media_type, document_url, document_name, call_type, call_duration } = body;
-
-    if (!conversation_id) {
-      return NextResponse.json({ error: 'Missing conversation_id' }, { status: 400 });
+    const { data: membership, error: membershipError } = await supabase
+      .from('chat_participants')
+      .select('chat_id')
+      .eq('chat_id', chatId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (membershipError) {
+      console.error('Chat membership query failed:', membershipError.message);
+      return errorResponse('Could not send this message.', 500);
     }
+    if (!membership) return errorResponse('You are not a participant in this conversation.', 403);
 
-    if (!content && !media_url && !document_url && !call_type) {
-      return NextResponse.json({ error: 'Message must have content, media, document, or call info' }, { status: 400 });
-    }
-
-    // Insert message
     const { data: message, error } = await supabase
       .from('messages')
       .insert({
-        conversation_id,
+        chat_id: chatId,
         sender_id: user.id,
         content: content || null,
-        media_url: media_url || null,
-        media_type: media_type || null,
-        document_url: document_url || null,
-        document_name: document_name || null,
-        call_type: call_type || null,
-        call_duration: call_duration || null,
-        created_at: new Date().toISOString(),
+        media_url: mediaUrl,
+        message_type: messageType,
+        document_name: documentName,
       })
-      .select()
+      .select(messageFields)
       .single();
-
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('Message send failed:', error.message);
+      return errorResponse('Could not send your message. Please try again.', 500);
     }
 
-    return NextResponse.json({ message });
+    return NextResponse.json({ message }, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to send message' },
-      { status: 500 }
-    );
+    console.error('Message send request failed:', error);
+    return errorResponse('Could not process your message.', 500);
   }
 }

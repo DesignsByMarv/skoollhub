@@ -4,11 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const navItems = [
-  { label: 'Overview', href: '/dashboard', icon: '🏠' },
+  { label: 'Home', href: '/feed', icon: '🏠' },
   { label: 'Hostels & Housing', href: '/houses', icon: '🏢' },
   { label: 'Roommate Finder', href: '/roommates', icon: '👥' },
   { label: 'Timetable & Classes', href: '/timetable', icon: '📅' },
-  { label: 'Campus Feed', href: '/feed', icon: '📱' },
   { label: 'Messages', href: '/messages', icon: '💬' },
   { label: 'SkoollHub AI', href: '/ai-assistant', icon: '🤖' },
   { label: 'Settings', href: '/settings', icon: '⚙️' },

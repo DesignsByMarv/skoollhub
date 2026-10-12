@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import {
   AlertCircle,
   Bookmark,
@@ -20,7 +21,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 
 type Category = 'Academic' | 'Housing' | 'Events' | 'Marketplace';
-type Comment = { id: string; author: string; handle: string; text: string; timestamp: string };
+type Comment = { id: string; authorId: string; author: string; handle: string; text: string; timestamp: string };
 type Post = {
   id: string;
   isOwnPost: boolean;
@@ -508,7 +509,12 @@ export default function CampusFeed() {
                     <div className="mb-3 max-h-52 space-y-3 overflow-y-auto">
                       {post.comments.map((comment) => (
                         <div key={comment.id} className="text-xs leading-5">
-                          <span className="mr-1.5 font-semibold text-slate-800 dark:text-zinc-100">{comment.author}</span>
+                          <Link
+                            href={`/profile/${encodeURIComponent(comment.handle)}`}
+                            className="mr-1.5 font-semibold text-slate-800 hover:text-indigo-600 hover:underline dark:text-zinc-100 dark:hover:text-indigo-300"
+                          >
+                            {comment.author}
+                          </Link>
                           <span className="text-slate-600 dark:text-zinc-300">{comment.text}</span>
                           <span className="ml-2 text-[10px] text-slate-400">{relativeTime(comment.timestamp)}</span>
                         </div>

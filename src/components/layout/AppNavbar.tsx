@@ -17,17 +17,17 @@ import {
 } from 'lucide-react';
 
 const items = [
-  { label: 'Home', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Feed', href: '/feed', icon: MessageCircle },
+  { label: 'Home', href: '/feed', icon: LayoutDashboard },
   { label: 'Housing', href: '/houses', icon: House },
   { label: 'Roommates', href: '/roommates', icon: Users },
   { label: 'Classes', href: '/timetable', icon: BookOpen },
   { label: 'Messages', href: '/messages', icon: MessageCircle },
   { label: 'AI Assistant', href: '/ai-assistant', icon: Sparkles },
+  { label: 'Profile', href: '/profile', icon: CircleUserRound },
 ];
 
 const mobileItems = items.filter((item) =>
-  ['/dashboard', '/feed', '/houses', '/messages', '/ai-assistant'].includes(item.href)
+  ['/feed', '/houses', '/timetable', '/messages', '/profile', '/ai-assistant'].includes(item.href)
 );
 
 function isCurrent(pathname: string, href: string) {
@@ -65,6 +65,12 @@ export default function AppNavbar() {
                   key={href}
                   href={href}
                   aria-current={active ? 'page' : undefined}
+                  onClick={(event) => {
+                    if (href === '/feed' && pathname === '/feed') {
+                      event.preventDefault();
+                      window.location.reload();
+                    }
+                  }}
                   className={`inline-flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-xs font-semibold transition ${active ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-white'}`}
                 >
                   <Icon size={16} strokeWidth={active ? 2.4 : 1.9} />
@@ -122,6 +128,12 @@ export default function AppNavbar() {
                   key={href}
                   href={href}
                   aria-current={active ? 'page' : undefined}
+                  onClick={(event) => {
+                    if (href === '/feed' && pathname === '/feed') {
+                      event.preventDefault();
+                      window.location.reload();
+                    }
+                  }}
                   className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${active ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-900'}`}
                 >
                   <Icon size={15} />
@@ -135,7 +147,7 @@ export default function AppNavbar() {
 
       <nav
         aria-label="Mobile navigation"
-        className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-5 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 md:hidden"
+        className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-6 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 md:hidden"
       >
         {mobileItems.map(({ label, href, icon: Icon }) => {
           const active = isCurrent(pathname, href);
@@ -144,6 +156,12 @@ export default function AppNavbar() {
               key={href}
               href={href}
               aria-current={active ? 'page' : undefined}
+              onClick={(event) => {
+                if (href === '/feed' && pathname === '/feed') {
+                  event.preventDefault();
+                  window.location.reload();
+                }
+              }}
               className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[10px] font-semibold transition ${active ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 dark:text-zinc-400'}`}
             >
               <Icon size={18} strokeWidth={active ? 2.4 : 1.9} />

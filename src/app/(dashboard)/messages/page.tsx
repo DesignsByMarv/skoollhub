@@ -26,6 +26,7 @@ type Conversation = {
   id: string;
   contact: Contact;
   last_message: Message | null;
+  unread_count: number;
 };
 
 async function responseError(response: Response) {
@@ -80,6 +81,25 @@ function MessagesContent() {
     setConversations(data.conversations);
     return data.conversations;
   }, []);
+
+  const markConversationRead = useCallback(async (chatId: string) => {
+    const response = await fetch('/api/messages/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId }),
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+    setConversations((current) => current.map((conversation) =>
+      conversation.id === chatId ? { ...conversation, unread_count: 0 } : conversation
+    ));
+  }, []);
+
+  const openConversation = (chatId: string) => {
+    setSelectedId(chatId);
+    void markConversationRead(chatId).catch((readError) => {
+      setError(readError instanceof Error ? readError.message : 'Could not mark the conversation as read.');
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -136,7 +156,10 @@ function MessagesContent() {
         const response = await fetch(`/api/messages?chat_id=${encodeURIComponent(selectedId)}`, { cache: 'no-store' });
         if (!response.ok) throw new Error(await responseError(response));
         const data = await response.json() as { messages: Message[] };
-        if (active) setMessages(data.messages);
+        if (active) {
+          setMessages(data.messages);
+          await markConversationRead(selectedId);
+        }
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load message history.');
       }
@@ -145,7 +168,7 @@ function MessagesContent() {
     return () => {
       active = false;
     };
-  }, [selectedId]);
+  }, [markConversationRead, selectedId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -162,6 +185,11 @@ function MessagesContent() {
         setMessages((current) => current.some((message) => message.id === incoming.id)
           ? current
           : [...current, incoming]);
+        if (incoming.sender_id !== currentUserId) {
+          void markConversationRead(incoming.chat_id).catch((readError) => {
+            setError(readError instanceof Error ? readError.message : 'Could not update message read status.');
+          });
+        }
         void loadConversations().catch((loadError) => {
           setError(loadError instanceof Error ? loadError.message : 'Could not refresh conversations.');
         });
@@ -174,7 +202,7 @@ function MessagesContent() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [loadConversations, selectedId]);
+  }, [currentUserId, loadConversations, markConversationRead, selectedId]);
 
   useEffect(() => {
     if (!showNewChat) return;
@@ -337,7 +365,7 @@ function MessagesContent() {
             <button
               key={conversation.id}
               type="button"
-              onClick={() => setSelectedId(conversation.id)}
+              onClick={() => openConversation(conversation.id)}
               className={`flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left transition dark:border-zinc-900 ${conversation.id === selectedId ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'hover:bg-slate-50 dark:hover:bg-zinc-900'}`}
             >
               {conversation.contact.avatar_url
@@ -350,6 +378,7 @@ function MessagesContent() {
                 </span>
               </span>
               {conversation.last_message && <time className="self-start pt-1 text-[10px] text-slate-400">{formatTime(conversation.last_message.created_at)}</time>}
+              {conversation.unread_count > 0 && <span aria-label={`${conversation.unread_count} unread messages`} className="flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">{conversation.unread_count > 99 ? '99+' : conversation.unread_count}</span>}
             </button>
           )) : (
             <div className="px-6 py-12 text-center">

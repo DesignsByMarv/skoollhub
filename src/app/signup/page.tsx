@@ -1,15 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Eye, EyeOff, Mail, Lock, User, AtSign, CheckCircle2 } from 'lucide-react';
+import { isValidPhoneNumber, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
+import { countries, courseOptions, defaultCountry } from '@/lib/countries';
+
+type School = { id: string; name: string; short_name: string; city: string; state: string };
 
 export default function SignupPage() {
   const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
+  const [countryIso, setCountryIso] = useState<CountryCode>(defaultCountry);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [schoolId, setSchoolId] = useState('');
+  const [schools, setSchools] = useState<School[]>([]);
+  const [schoolsLoading, setSchoolsLoading] = useState(true);
+  const [department, setDepartment] = useState('');
+  const [customDepartment, setCustomDepartment] = useState('');
+  const [academicLevel, setAcademicLevel] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -22,10 +34,43 @@ export default function SignupPage() {
   const [resendMessage, setResendMessage] = useState('');
   const [resending, setResending] = useState(false);
 
+  useEffect(() => {
+    let active = true;
+    fetch('/api/directory', { cache: 'no-store' })
+      .then(async (response) => {
+        const data = await response.json() as { schools?: School[]; error?: string };
+        if (!response.ok) throw new Error(data.error || 'Could not load the school directory.');
+        if (active) setSchools(data.schools ?? []);
+      })
+      .catch((directoryError: unknown) => {
+        if (active) setErrorMsg(directoryError instanceof Error ? directoryError.message : 'Could not load the school directory.');
+      })
+      .finally(() => {
+        if (active) setSchoolsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setErrorMsg('');
+    const selectedDepartment = department === 'Other' ? customDepartment.trim() : department;
+    if (!/^[a-zA-Z0-9_]{3,24}$/.test(username.trim())) {
+      setErrorMsg('Username must be 3–24 characters using letters, numbers, or underscores.');
+      return;
+    }
+    if (!schoolId || !selectedDepartment || !academicLevel) {
+      setErrorMsg('Choose your school, course or department, and academic level.');
+      return;
+    }
+    const phone = parsePhoneNumberFromString(phoneNumber, countryIso);
+    if (!phone || !isValidPhoneNumber(phone.number)) {
+      setErrorMsg('Enter a valid phone number for the selected country.');
+      return;
+    }
+    setLoading(true);
 
     try {
       const supabase = createClient();
@@ -36,6 +81,11 @@ export default function SignupPage() {
           data: {
             full_name: fullName,
             username: username.toLowerCase().trim(),
+            phone_number: phone.number,
+            country_iso: countryIso,
+            school_id: schoolId,
+            department: selectedDepartment,
+            level: academicLevel,
           },
         },
       });
@@ -225,11 +275,110 @@ export default function SignupPage() {
               <input
                 type="text"
                 required
+                minLength={3}
+                maxLength={24}
+                pattern="[a-zA-Z0-9_]{3,24}"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => setUsername(e.target.value.toLowerCase())}
                 placeholder="marv_plug"
+                autoComplete="username"
                 className="w-full rounded-xl border border-gray-300 bg-transparent py-2.5 pl-10 pr-4 text-sm focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white"
               />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="country" className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">Country</label>
+            <select
+              id="country"
+              value={countryIso}
+              onChange={(event) => setCountryIso(event.target.value as CountryCode)}
+              className="w-full rounded-xl border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white dark:[color-scheme:dark]"
+            >
+              {countries.map((country) => (
+                <option key={country.code} value={country.code}>{country.name} ({country.callingCode})</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="phone-number" className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">Phone number</label>
+            <div className="flex overflow-hidden rounded-xl border border-gray-300 focus-within:border-indigo-600 focus-within:ring-1 focus-within:ring-indigo-600 dark:border-gray-600">
+              <span className="flex shrink-0 items-center border-r border-gray-200 bg-gray-50 px-3 text-sm font-semibold text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                {countries.find((country) => country.code === countryIso)?.callingCode}
+              </span>
+              <input
+                id="phone-number"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel-national"
+                required
+                maxLength={24}
+                value={phoneNumber}
+                onChange={(event) => setPhoneNumber(event.target.value)}
+                placeholder="801 234 5678"
+                className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-gray-900 outline-none dark:text-white"
+              />
+            </div>
+            <p className="mt-1 text-[10px] text-gray-500">Your country calling code is added automatically.</p>
+          </div>
+
+          <div>
+            <label htmlFor="school" className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">University, college or other tertiary school</label>
+            <select
+              id="school"
+              required
+              value={schoolId}
+              onChange={(event) => setSchoolId(event.target.value)}
+              disabled={schoolsLoading}
+              className="w-full rounded-xl border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 disabled:opacity-60 dark:text-white dark:[color-scheme:dark]"
+            >
+              <option value="">{schoolsLoading ? 'Loading schools…' : 'Select your school'}</option>
+              {schools.map((school) => (
+                <option key={school.id} value={school.id}>{school.name} — {school.city}, {school.state}</option>
+              ))}
+            </select>
+            {!schoolsLoading && schools.length === 0 && <p className="mt-1 text-[10px] text-rose-600">School list unavailable. Please refresh to try again.</p>}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="department" className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">Course / department</label>
+              <select
+                id="department"
+                required
+                value={department}
+                onChange={(event) => setDepartment(event.target.value)}
+                className="w-full rounded-xl border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white dark:[color-scheme:dark]"
+              >
+                <option value="">Select course or department</option>
+                {courseOptions.map((course) => <option key={course} value={course}>{course}</option>)}
+                <option value="Other">Other / not listed</option>
+              </select>
+              {department === 'Other' && (
+                <input
+                  type="text"
+                  required
+                  maxLength={100}
+                  value={customDepartment}
+                  onChange={(event) => setCustomDepartment(event.target.value)}
+                  placeholder="Enter your course or department"
+                  className="mt-2 w-full rounded-xl border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white"
+                />
+              )}
+            </div>
+            <div>
+              <label htmlFor="academic-level" className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">Academic level</label>
+              <select
+                id="academic-level"
+                required
+                value={academicLevel}
+                onChange={(event) => setAcademicLevel(event.target.value)}
+                className="w-full rounded-xl border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:text-white dark:[color-scheme:dark]"
+              >
+                <option value="">Select your level</option>
+                {[100, 200, 300, 400, 500, 600, 700, 800, 900].map((level) => <option key={level} value={level}>{level} Level</option>)}
+              </select>
             </div>
           </div>
 

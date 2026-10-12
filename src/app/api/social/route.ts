@@ -7,6 +7,20 @@ function errorResponse(error: string, status: number) {
   return NextResponse.json({ error }, { status });
 }
 
+function distanceInKilometers(
+  latitude: number,
+  longitude: number,
+  otherLatitude: number,
+  otherLongitude: number
+) {
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const deltaLatitude = radians(otherLatitude - latitude);
+  const deltaLongitude = radians(otherLongitude - longitude);
+  const a = Math.sin(deltaLatitude / 2) ** 2
+    + Math.cos(radians(latitude)) * Math.cos(radians(otherLatitude)) * Math.sin(deltaLongitude / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export async function GET(request: Request) {
   try {
     const supabase = await createServerSupabaseClient();
@@ -70,11 +84,13 @@ export async function GET(request: Request) {
         supabase.from('profiles')
           .select('id, full_name, username, avatar_url, department')
           .neq('id', user.id)
+          .eq('is_discoverable', true)
           .ilike('username', pattern)
           .limit(12),
         supabase.from('profiles')
           .select('id, full_name, username, avatar_url, department')
           .neq('id', user.id)
+          .eq('is_discoverable', true)
           .ilike('full_name', pattern)
           .limit(12),
       ]);
@@ -90,28 +106,63 @@ export async function GET(request: Request) {
       return NextResponse.json({ suggestions: [...suggestions.values()].slice(0, 12) });
     }
 
-    const { data: followed, error: followedError } = await supabase
-      .from('follows')
-      .select('following_id')
-      .eq('follower_id', user.id);
-    if (followedError) {
-      console.error('Follow suggestions query failed:', followedError.message);
+    const [{ data: followed, error: followedError }, { data: currentProfile, error: currentProfileError }] = await Promise.all([
+      supabase.from('follows').select('following_id').eq('follower_id', user.id),
+      supabase.from('profiles')
+        .select('school_id, location_latitude, location_longitude, location_sharing_enabled')
+        .eq('id', user.id)
+        .maybeSingle(),
+    ]);
+    const setupError = followedError ?? currentProfileError;
+    if (setupError) {
+      console.error('Follow suggestions context query failed:', setupError.message);
       return errorResponse('Could not load follow suggestions.', 500);
     }
 
     const excludedIds = [user.id, ...(followed ?? []).map((item) => item.following_id)];
     const { data: suggestions, error: suggestionsError } = await supabase
       .from('profiles')
-      .select('id, full_name, username, avatar_url, department')
+      .select('id, full_name, username, avatar_url, department, school_id, location_latitude, location_longitude, location_sharing_enabled, created_at')
       .not('id', 'in', `(${excludedIds.join(',')})`)
+      .eq('is_discoverable', true)
       .order('created_at', { ascending: false })
-      .limit(8);
+      .limit(500);
     if (suggestionsError) {
       console.error('Follow suggestions query failed:', suggestionsError.message);
       return errorResponse('Could not load follow suggestions.', 500);
     }
 
-    return NextResponse.json({ suggestions: suggestions ?? [] });
+    const latitude = currentProfile?.location_sharing_enabled ? currentProfile.location_latitude : null;
+    const longitude = currentProfile?.location_sharing_enabled ? currentProfile.location_longitude : null;
+    const rankedSuggestions = (suggestions ?? []).map((candidate) => {
+      const isSameSchool = Boolean(currentProfile?.school_id && candidate.school_id === currentProfile.school_id);
+      const hasLocation = latitude !== null && longitude !== null
+        && candidate.location_sharing_enabled
+        && candidate.location_latitude !== null
+        && candidate.location_longitude !== null;
+      const distance = hasLocation
+        ? distanceInKilometers(latitude, longitude, candidate.location_latitude, candidate.location_longitude)
+        : Number.POSITIVE_INFINITY;
+      return {
+        profile: candidate,
+        score: isSameSchool ? distance / 1000 : 100 + distance,
+      };
+    })
+      .sort((a, b) => a.score - b.score || a.profile.full_name.localeCompare(b.profile.full_name))
+      .slice(0, 8)
+      .map(({ profile }) => ({
+        id: profile.id,
+        full_name: profile.full_name,
+        username: profile.username,
+        avatar_url: profile.avatar_url,
+        department: profile.department,
+        same_school: Boolean(currentProfile?.school_id && profile.school_id === currentProfile.school_id),
+      }));
+
+    return NextResponse.json({
+      suggestions: rankedSuggestions,
+      nearby_enabled: Boolean(latitude !== null && longitude !== null),
+    });
   } catch (error) {
     console.error('Social request failed:', error);
     return errorResponse('Could not process your social request.', 500);

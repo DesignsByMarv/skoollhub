@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getCountries } from 'libphonenumber-js';
 
-const profileColumns = 'id, email, full_name, username, avatar_url, school_id, department, level, bio, phone_number, is_verified, created_at';
+const profileColumns = 'id, email, full_name, username, avatar_url, school_id, department, level, bio, phone_number, country_iso, location_latitude, location_longitude, location_sharing_enabled, is_discoverable, is_verified, created_at';
+const supportedCountryCodes = new Set<string>(getCountries());
 
 function errorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -27,7 +29,7 @@ export async function GET() {
 
     const [{ data: profile, error: profileError }, { data: schools, error: schoolsError }] = await Promise.all([
       supabase.from('profiles').select(profileColumns).eq('id', user.id).maybeSingle(),
-      supabase.from('schools').select('id, name, short_name, city, state').order('name').limit(500),
+      supabase.from('schools').select('id, name, short_name, city, state').order('name').limit(2000),
     ]);
     if (profileError) {
       console.error('Profile query failed:', profileError.message);
@@ -86,6 +88,8 @@ export async function PATCH(request: Request) {
     const avatarUrl = typeof payload.avatar_url === 'string' ? payload.avatar_url.trim() : null;
     const department = typeof payload.department === 'string' ? payload.department.trim() : '';
     const phoneNumber = typeof payload.phone_number === 'string' ? payload.phone_number.trim() : '';
+    const countryIso = typeof payload.country_iso === 'string' ? payload.country_iso.trim().toUpperCase() : '';
+    const isDiscoverable = typeof payload.is_discoverable === 'boolean' ? payload.is_discoverable : true;
     const bio = typeof payload.bio === 'string' ? payload.bio.trim() : '';
     const level = payload.level === null ? null : payload.level;
     const schoolId = payload.school_id === null ? null : payload.school_id;
@@ -96,6 +100,9 @@ export async function PATCH(request: Request) {
     }
     if (department.length > 100) return errorResponse('Department must be 100 characters or fewer.', 400);
     if (phoneNumber.length > 30) return errorResponse('Phone number must be 30 characters or fewer.', 400);
+    if (countryIso && !supportedCountryCodes.has(countryIso)) {
+      return errorResponse('Choose a valid country.', 400);
+    }
     if (bio.length > 500) return errorResponse('Bio must be 500 characters or fewer.', 400);
     if (level !== null && (!Number.isInteger(level) || (level as number) < 100 || (level as number) > 900)) {
       return errorResponse('Choose a valid academic level.', 400);
@@ -110,6 +117,8 @@ export async function PATCH(request: Request) {
         avatar_url: avatarUrl,
         department: department || null,
         phone_number: phoneNumber || null,
+        country_iso: countryIso || null,
+        is_discoverable: isDiscoverable,
         bio: bio || null,
         level,
         school_id: schoolId,

@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   BookOpen,
+  Check,
   CircleUserRound,
   House,
   LayoutDashboard,
@@ -15,6 +16,7 @@ import {
   Sun,
   Users,
 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 const items = [
   { label: 'Home', href: '/feed', icon: LayoutDashboard },
@@ -36,6 +38,19 @@ function isCurrent(pathname: string, href: string) {
 
 export default function AppNavbar() {
   const pathname = usePathname();
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [messageNotice, setMessageNotice] = useState(false);
+
+  const refreshUnreadCount = useCallback(async () => {
+    try {
+      const response = await fetch('/api/messages/unread', { cache: 'no-store' });
+      if (!response.ok) return;
+      const data = await response.json() as { unreadCount: number };
+      setUnreadCount(data.unreadCount);
+    } catch (error) {
+      console.error('Could not refresh unread message badge:', error);
+    }
+  }, []);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem('skoollhub-theme');
@@ -43,6 +58,58 @@ export default function AppNavbar() {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     window.localStorage.setItem('skoollhub-theme', theme);
   }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    void supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!active || !user) return;
+      channel = supabase
+        .channel(`inbox-notifications:${user.id}`)
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        }, (payload) => {
+          const message = payload.new as { sender_id?: string };
+          if (message.sender_id === user.id) return;
+          let shouldNotify = true;
+          const savedPreferences = window.localStorage.getItem('skoollhub-notifications');
+          if (savedPreferences) {
+            try {
+              const preferences = JSON.parse(savedPreferences) as { newMessages?: boolean };
+              shouldNotify = preferences.newMessages !== false;
+            } catch {
+              window.localStorage.removeItem('skoollhub-notifications');
+            }
+          }
+          if (shouldNotify) {
+            setMessageNotice(true);
+            window.setTimeout(() => setMessageNotice(false), 5000);
+          }
+          void refreshUnreadCount();
+        })
+        .subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.error('Live inbox notifications are unavailable.');
+          }
+        });
+      void refreshUnreadCount();
+    });
+    const poll = window.setInterval(() => void refreshUnreadCount(), 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(poll);
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [refreshUnreadCount]);
+
+  const messageBadge = unreadCount > 0 ? (
+    <span aria-hidden="true" className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-none text-white">
+      {unreadCount > 99 ? '99+' : unreadCount}
+    </span>
+  ) : null;
 
   return (
     <>
@@ -75,6 +142,7 @@ export default function AppNavbar() {
                 >
                   <Icon size={16} strokeWidth={active ? 2.4 : 1.9} />
                   {label}
+                  {href === '/messages' && messageBadge}
                 </Link>
               );
             })}
@@ -138,6 +206,7 @@ export default function AppNavbar() {
                 >
                   <Icon size={15} />
                   {label}
+                  {href === '/messages' && messageBadge}
                 </Link>
               );
             })}
@@ -164,12 +233,27 @@ export default function AppNavbar() {
               }}
               className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[10px] font-semibold transition ${active ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 dark:text-zinc-400'}`}
             >
-              <Icon size={18} strokeWidth={active ? 2.4 : 1.9} />
+              <span className="relative">
+                <Icon size={18} strokeWidth={active ? 2.4 : 1.9} />
+                {href === '/messages' && unreadCount > 0 && <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+              </span>
               <span className="max-w-full truncate">{label === 'AI Assistant' ? 'AI' : label}</span>
             </Link>
           );
         })}
       </nav>
+      {messageNotice && pathname !== '/messages' && (
+        <Link
+          href="/messages"
+          role="status"
+          onClick={() => setMessageNotice(false)}
+          className="fixed right-4 top-20 z-[60] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-xl dark:border-indigo-900 dark:bg-zinc-900 dark:text-white"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"><MessageCircle size={17} /></span>
+          <span>New message received <span className="block text-xs font-normal text-slate-500 dark:text-zinc-400">Tap to open your inbox</span></span>
+          <Check size={16} className="ml-2 text-emerald-600" />
+        </Link>
+      )}
     </>
   );
 }

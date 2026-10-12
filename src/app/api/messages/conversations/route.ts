@@ -40,14 +40,17 @@ export async function GET() {
     if (chatIds.length === 0) return NextResponse.json({ conversations: [] });
 
     const [participantsResult, messagesResult] = await Promise.all([
-      supabase.from('chat_participants').select('chat_id, user_id').in('chat_id', chatIds),
+      supabase.from('chat_participants').select('chat_id, user_id, last_read_at').in('chat_id', chatIds),
       supabase.from('messages')
         .select('id, chat_id, content, media_url, message_type, created_at, sender_id')
         .in('chat_id', chatIds)
         .order('created_at', { ascending: false })
         .limit(500),
     ]);
-    const queryError = participantsResult.error ?? messagesResult.error;
+    const [{ data: unreadCounts, error: unreadError }] = await Promise.all([
+      supabase.rpc('get_unread_message_counts'),
+    ]);
+    const queryError = participantsResult.error ?? messagesResult.error ?? unreadError;
     if (queryError) {
       console.error('Conversation details query failed:', queryError.message);
       return errorResponse('Could not load conversations.', 500);
@@ -65,6 +68,7 @@ export async function GET() {
     }
 
     const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+    const unreadByChat = new Map((unreadCounts ?? []).map((entry) => [entry.chat_id, Number(entry.unread_count)]));
     const lastMessageByChat = new Map<string, MessagePreview>();
     for (const message of (messagesResult.data ?? []) as MessagePreview[]) {
       if (!lastMessageByChat.has(message.chat_id)) lastMessageByChat.set(message.chat_id, message);
@@ -77,6 +81,7 @@ export async function GET() {
         id: chatId,
         contact: otherUserId ? profileById.get(otherUserId) ?? null : null,
         last_message: lastMessageByChat.get(chatId) ?? null,
+        unread_count: unreadByChat.get(chatId) ?? 0,
       };
     }).filter((conversation) => conversation.contact)
       .sort((a, b) => {
@@ -89,6 +94,38 @@ export async function GET() {
   } catch (error) {
     console.error('Conversations request failed:', error);
     return errorResponse('Could not process your conversations request.', 500);
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user || !user.email_confirmed_at) {
+      return errorResponse('Please sign in with a confirmed email.', 401);
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse('Request body must be valid JSON.', 400);
+    }
+    const chatId = body && typeof body === 'object'
+      ? (body as Record<string, unknown>).chat_id
+      : null;
+    if (!isUuid(chatId)) return errorResponse('Choose a valid conversation.', 400);
+
+    const { error } = await supabase.rpc('mark_chat_read', { target_chat_id: chatId });
+    if (error) {
+      console.error('Mark conversation read failed:', error.message);
+      return errorResponse('Could not mark this conversation as read.', 500);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Mark conversation read request failed:', error);
+    return errorResponse('Could not process this request.', 500);
   }
 }
 

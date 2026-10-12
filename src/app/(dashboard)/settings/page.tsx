@@ -11,14 +11,19 @@ import {
   CircleUserRound,
   KeyRound,
   LoaderCircle,
+  MapPin,
+  Moon,
+  Shield,
   Save,
   Settings,
   ShieldCheck,
   Upload,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { isValidPhoneNumber, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
+import { countries, defaultCountry } from '@/lib/countries';
 
-type Tab = 'profile' | 'notifications' | 'security';
+type Tab = 'profile' | 'notifications' | 'privacy' | 'security' | 'appearance';
 type School = { id: string; name: string; short_name: string; city: string; state: string };
 type Profile = {
   id: string;
@@ -31,17 +36,22 @@ type Profile = {
   level: number | null;
   bio: string | null;
   phone_number: string | null;
+  country_iso: string | null;
+  location_sharing_enabled?: boolean;
+  is_discoverable?: boolean;
 };
 type NotificationPreferences = {
   roommateMatches: boolean;
   feedActivity: boolean;
   timetableReminders: boolean;
+  newMessages: boolean;
 };
 
 const defaultNotifications: NotificationPreferences = {
   roommateMatches: true,
   feedActivity: true,
   timetableReminders: true,
+  newMessages: true,
 };
 
 async function readError(response: Response) {
@@ -57,8 +67,12 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [notifications, setNotifications] = useState(defaultNotifications);
+  const [phoneCountry, setPhoneCountry] = useState<CountryCode>(defaultCountry);
+  const [localPhoneNumber, setLocalPhoneNumber] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [updatingPrivacy, setUpdatingPrivacy] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -76,6 +90,16 @@ export default function SettingsPage() {
         if (!active) return;
         setProfile(data.profile);
         setSchools(data.schools);
+        setDarkMode(document.documentElement.classList.contains('dark'));
+        const parsedPhone = data.profile.phone_number
+          ? parsePhoneNumberFromString(data.profile.phone_number)
+          : undefined;
+        if (data.profile.country_iso && countries.some((country) => country.code === data.profile.country_iso)) {
+          setPhoneCountry(data.profile.country_iso as CountryCode);
+        } else if (parsedPhone?.country) {
+          setPhoneCountry(parsedPhone.country);
+        }
+        setLocalPhoneNumber(parsedPhone?.nationalNumber ?? data.profile.phone_number ?? '');
         const savedNotifications = window.localStorage.getItem('skoollhub-notifications');
         if (savedNotifications) {
           try {
@@ -146,6 +170,13 @@ export default function SettingsPage() {
     if (!profile) return;
     setError('');
     setNotice('');
+    const parsedPhone = localPhoneNumber.trim()
+      ? parsePhoneNumberFromString(localPhoneNumber, phoneCountry)
+      : undefined;
+    if (localPhoneNumber.trim() && (!parsedPhone || !isValidPhoneNumber(parsedPhone.number))) {
+      setError('Enter a valid phone number for the selected country.');
+      return;
+    }
     setIsSaving(true);
     try {
       const response = await fetch('/api/profile', {
@@ -158,7 +189,9 @@ export default function SettingsPage() {
           school_id: profile.school_id,
           department: profile.department ?? '',
           level: profile.level,
-          phone_number: profile.phone_number ?? '',
+          phone_number: parsedPhone?.number ?? '',
+          country_iso: phoneCountry,
+          is_discoverable: profile.is_discoverable ?? true,
           bio: profile.bio ?? '',
         }),
       });
@@ -206,10 +239,81 @@ export default function SettingsPage() {
     }
   };
 
+  const updateDiscoverability = async (isDiscoverable: boolean) => {
+    setUpdatingPrivacy(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/profile/privacy', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_discoverable: isDiscoverable }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      setProfile((current) => current ? { ...current, is_discoverable: isDiscoverable } : current);
+      setNotice(isDiscoverable ? 'Your profile can appear in student discovery.' : 'Your profile is hidden from student discovery and new-chat search.');
+    } catch (privacyError) {
+      setError(privacyError instanceof Error ? privacyError.message : 'Could not update your discovery settings.');
+    } finally {
+      setUpdatingPrivacy(false);
+    }
+  };
+
+  const updateNearbyLocation = async (enabled: boolean) => {
+    setUpdatingPrivacy(true);
+    setError('');
+    setNotice('');
+    try {
+      if (!enabled) {
+        const response = await fetch('/api/profile/location', { method: 'DELETE' });
+        if (!response.ok) throw new Error(await readError(response));
+      } else {
+        if (!navigator.geolocation) throw new Error('Location sharing is not supported by this browser.');
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: false,
+            timeout: 12_000,
+            maximumAge: 60_000,
+          });
+        });
+        const response = await fetch('/api/profile/location', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          }),
+        });
+        if (!response.ok) throw new Error(await readError(response));
+      }
+      setProfile((current) => current ? { ...current, location_sharing_enabled: enabled } : current);
+      setNotice(enabled ? 'Nearby discovery is on. Only an approximate location is stored.' : 'Nearby discovery is off and your saved location was removed.');
+    } catch (locationError) {
+      if (locationError instanceof GeolocationPositionError) {
+        setError(locationError.code === locationError.PERMISSION_DENIED
+          ? 'Allow location access in your browser to enable nearby discovery.'
+          : 'Could not get your location. Try again.');
+      } else {
+        setError(locationError instanceof Error ? locationError.message : 'Could not update nearby discovery.');
+      }
+    } finally {
+      setUpdatingPrivacy(false);
+    }
+  };
+
+  const setTheme = (isDark: boolean) => {
+    document.documentElement.classList.toggle('dark', isDark);
+    window.localStorage.setItem('skoollhub-theme', isDark ? 'dark' : 'light');
+    setDarkMode(isDark);
+    setNotice(`Dark mode ${isDark ? 'enabled' : 'disabled'}.`);
+  };
+
   const tabs: { id: Tab; label: string; icon: typeof CircleUserRound }[] = [
     { id: 'profile', label: 'Profile information', icon: CircleUserRound },
     { id: 'notifications', label: 'Notifications', icon: Bell },
+    { id: 'privacy', label: 'Privacy and discovery', icon: Shield },
     { id: 'security', label: 'Security', icon: ShieldCheck },
+    { id: 'appearance', label: 'Appearance', icon: Moon },
   ];
 
   return (
@@ -377,7 +481,26 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label htmlFor="phone" className={labelClass}>Phone number</label>
-                      <input id="phone" type="tel" maxLength={30} value={profile.phone_number ?? ''} onChange={(event) => updateProfile('phone_number', event.target.value)} className={inputClass} />
+                      <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-slate-50 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-zinc-700 dark:bg-zinc-950 dark:focus-within:ring-indigo-950">
+                        <select
+                          aria-label="Phone country"
+                          value={phoneCountry}
+                          onChange={(event) => setPhoneCountry(event.target.value as CountryCode)}
+                          className="max-w-36 border-r border-slate-200 bg-transparent px-2 text-xs text-slate-700 outline-none dark:border-zinc-700 dark:text-zinc-200 dark:[color-scheme:dark]"
+                        >
+                          {countries.map((country) => <option key={country.code} value={country.code}>{country.name} ({country.callingCode})</option>)}
+                        </select>
+                        <input
+                          id="phone"
+                          type="tel"
+                          inputMode="tel"
+                          maxLength={24}
+                          value={localPhoneNumber}
+                          onChange={(event) => setLocalPhoneNumber(event.target.value)}
+                          placeholder="Phone number"
+                          className="min-w-0 flex-1 bg-transparent px-3.5 py-2.5 text-sm text-slate-900 outline-none dark:text-white"
+                        />
+                      </div>
                     </div>
                   </div>
                   <div>
@@ -405,6 +528,7 @@ export default function SettingsPage() {
                     ['roommateMatches', 'Roommate matches', 'Hear when students looking for a roommate connect with you.'],
                     ['feedActivity', 'Feed activity', 'Stay up to date with replies and activity on your posts.'],
                     ['timetableReminders', 'Class reminders', 'Get reminders about your upcoming lectures.'],
+                    ['newMessages', 'New messages', 'Show an in-app alert when someone sends you a message.'],
                   ] as const).map(([key, label, description]) => (
                     <label key={key} className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-slate-100 p-4 dark:border-zinc-800">
                       <span>
@@ -418,6 +542,61 @@ export default function SettingsPage() {
                   <div className="flex justify-end border-t border-slate-100 pt-4 dark:border-zinc-800">
                     <button type="button" onClick={saveNotifications} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-indigo-700"><Save size={15} />Save preferences</button>
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'privacy' && profile && (
+                <div className="space-y-5">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white">Privacy and discovery</h2>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">Choose whether other students can discover your account. Your exact GPS coordinates are never shown to other members.</p>
+                  </div>
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 p-4 dark:border-zinc-800">
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800 dark:text-zinc-100">Appear in student discovery</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-zinc-400">When off, your account is left out of follow suggestions and new-chat search. Your existing profile and posts remain public.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={profile.is_discoverable ?? true}
+                      disabled={updatingPrivacy}
+                      onChange={(event) => void updateDiscoverability(event.target.checked)}
+                      className="h-4 w-4 shrink-0 accent-indigo-600"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 p-4 dark:border-zinc-800">
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800 dark:text-zinc-100">Nearby student suggestions</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-zinc-400">With your browser's permission, share an approximate location (rounded to about 1 km) to rank nearby students. The exact GPS reading is not saved.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={profile.location_sharing_enabled ?? false}
+                      disabled={updatingPrivacy}
+                      onChange={(event) => void updateNearbyLocation(event.target.checked)}
+                      className="h-4 w-4 shrink-0 accent-indigo-600"
+                    />
+                  </label>
+                  <div className="flex items-start gap-3 rounded-xl bg-indigo-50 p-4 text-xs leading-5 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200">
+                    <MapPin size={17} className="mt-0.5 shrink-0" />
+                    <span>Nearby discovery prioritizes students at your university, then people with opted-in approximate locations. Location is processed by SkoollHub and is not sent to an external map provider.</span>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'appearance' && (
+                <div className="space-y-5">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white">Appearance</h2>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Set how SkoollHub looks on this device.</p>
+                  </div>
+                  <button type="button" onClick={() => setTheme(!darkMode)} className="flex w-full items-center justify-between gap-4 rounded-xl border border-slate-100 p-4 text-left transition hover:bg-slate-50 dark:border-zinc-800 dark:hover:bg-zinc-800">
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800 dark:text-zinc-100">Dark mode</span>
+                      <span className="mt-1 block text-xs text-slate-500 dark:text-zinc-400">Saved on this device.</span>
+                    </span>
+                    <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${darkMode ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-zinc-700 dark:text-zinc-200'}`}>{darkMode ? 'On' : 'Off'}</span>
+                  </button>
                 </div>
               )}
 

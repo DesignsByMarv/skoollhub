@@ -1,0 +1,24 @@
+import { NextResponse } from 'next/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+
+export async function GET() {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user || !user.email_confirmed_at) {
+      return NextResponse.json({ error: 'Please sign in with a confirmed email.' }, { status: 401 });
+    }
+
+    const { data, error } = await supabase.rpc('get_unread_message_counts');
+    if (error) {
+      console.error('Unread message count query failed:', error.message);
+      return NextResponse.json({ error: 'Could not load unread message counts.' }, { status: 500 });
+    }
+
+    const unreadCount = (data ?? []).reduce((total, item) => total + Number(item.unread_count), 0);
+    return NextResponse.json({ unreadCount });
+  } catch (error) {
+    console.error('Unread message count request failed:', error);
+    return NextResponse.json({ error: 'Could not process unread message count request.' }, { status: 500 });
+  }
+}

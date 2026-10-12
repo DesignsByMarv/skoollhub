@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { BookOpen, CalendarDays, House, Sparkles, Users } from 'lucide-react';
-import SuggestedPeople from '@/components/social/SuggestedPeople';
 
 const shortcuts = [
   { label: 'Find a place to stay', description: 'Browse student housing', href: '/houses', icon: House },
@@ -12,7 +11,6 @@ const shortcuts = [
 export default function RightSidebar() {
   return (
     <aside className="hidden w-80 space-y-5 pt-2 pl-4 lg:block">
-      <SuggestedPeople />
       <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="text-sm font-bold text-gray-900 dark:text-white">Campus shortcuts</h2>
         <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">

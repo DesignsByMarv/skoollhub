@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import AppNavbar from '@/components/layout/AppNavbar';
 
 export default function DashboardLayout({
@@ -7,7 +8,9 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="app-shell min-h-screen bg-amber-50/20 dark:bg-zinc-950">
-      <AppNavbar />
+      <Suspense fallback={<div className="h-16 border-b border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950" />}>
+        <AppNavbar />
+      </Suspense>
       <main className="app-page min-h-[calc(100vh-4rem)] pb-24 md:pb-8">
         {children}
       </main>

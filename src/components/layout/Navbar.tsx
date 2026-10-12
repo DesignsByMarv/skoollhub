@@ -10,10 +10,10 @@ export default function Navbar({ onOpenCreatePost }: { onOpenCreatePost?: () => 
       </div>
 
       <div className="flex items-center gap-3 text-xs font-medium text-gray-700 dark:text-gray-300">
-        <Link href="/dashboard" className="hover:text-blue-500 flex items-center gap-1">
+        <Link href="/feed" className="hover:text-blue-500 flex items-center gap-1">
           🏠 Home
         </Link>
-        <Link href="/hostels" className="hover:text-blue-500 flex items-center gap-1">
+        <Link href="/houses" className="hover:text-blue-500 flex items-center gap-1">
           🏢 Hostels
         </Link>
         <Link href="/roommates" className="hover:text-blue-500 flex items-center gap-1">

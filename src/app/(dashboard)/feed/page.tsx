@@ -2,6 +2,7 @@
 
 import CampusFeed from '@/components/feed/CampusFeed';
 import RightSidebar from '@/components/feed/RightSidebar';
+import SuggestedPeople from '@/components/social/SuggestedPeople';
 
 export default function FeedPage() {
   return (
@@ -13,6 +14,7 @@ export default function FeedPage() {
             Campus updates, student posts, and people to connect with.
           </p>
         </header>
+        <SuggestedPeople />
         <CampusFeed />
       </div>
       <RightSidebar />

@@ -31,7 +31,7 @@ export async function GET(request: Request) {
 
       const [postsResult, followersResult, followingResult, followedResult, schoolsResult] = await Promise.all([
         supabase.from('posts')
-          .select('id, content, category, media_urls, media_type, likes_count, comments_count, created_at')
+          .select('id, content, category, media_urls, media_type, likes_count, comments_count, created_at', { count: 'exact' })
           .eq('author_id', profile.id)
           .order('created_at', { ascending: false })
           .limit(60),
@@ -55,6 +55,7 @@ export async function GET(request: Request) {
           school: schoolsResult.data,
           followers_count: followersResult.count ?? 0,
           following_count: followingResult.count ?? 0,
+          posts_count: postsResult.count ?? 0,
           is_following: Boolean(followedResult.data),
           is_own_profile: profile.id === user.id,
         },

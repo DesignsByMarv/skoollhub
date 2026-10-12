@@ -15,6 +15,7 @@ type Profile = {
   is_verified?: boolean;
   created_at: string;
   school?: { name: string; city: string; state: string } | null;
+  posts_count: number;
   followers_count: number;
   following_count: number;
   is_following: boolean;
@@ -116,8 +117,6 @@ export default function ProfileView({ username }: { username?: string }) {
   }
   if (!profile) return null;
 
-  const totalLikes = posts.reduce((total, post) => total + post.likes_count, 0);
-
   return (
     <div className="mx-auto max-w-4xl space-y-8 px-4 py-6 sm:px-6">
       {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">{error}</p>}
@@ -144,7 +143,7 @@ export default function ProfileView({ username }: { username?: string }) {
           </div>
 
           <div className="mt-5 flex justify-center gap-6 text-sm text-slate-800 dark:text-zinc-100 sm:justify-start sm:gap-8">
-            <span><strong>{posts.length}</strong> posts</span>
+            <span><strong>{profile.posts_count ?? posts.length}</strong> posts</span>
             <span><strong>{profile.followers_count}</strong> followers</span>
             <span><strong>{profile.following_count}</strong> following</span>
           </div>
@@ -211,7 +210,6 @@ export default function ProfileView({ username }: { username?: string }) {
         </div>
       )}
 
-      <p className="sr-only">{totalLikes} likes received in total.</p>
     </div>
   );
 }

@@ -14,14 +14,13 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationError, setVerificationError] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendMessage, setResendMessage] = useState('');
   const [resending, setResending] = useState(false);
-
-  function getEmailRedirectTo() {
-    return `${window.location.origin}/auth/confirm?next=/dashboard`;
-  }
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +33,6 @@ export default function SignupPage() {
         email,
         password,
         options: {
-          emailRedirectTo: getEmailRedirectTo(),
           data: {
             full_name: fullName,
             username: username.toLowerCase().trim(),
@@ -58,21 +56,53 @@ export default function SignupPage() {
     }
   };
 
+  const handleVerifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{6}$/.test(verificationCode)) {
+      setVerificationError('Enter the six-digit code from your email.');
+      return;
+    }
+
+    setVerifying(true);
+    setVerificationError('');
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: verificationCode,
+        type: 'signup',
+      });
+
+      if (error) {
+        setVerificationError(error.message);
+      } else {
+        router.replace('/dashboard');
+        router.refresh();
+      }
+    } catch (err) {
+      setVerificationError(err instanceof Error ? err.message : 'Could not verify the code.');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const handleResendVerification = async () => {
     setResending(true);
     setResendMessage('');
+    setVerificationError('');
 
     try {
       const supabase = createClient();
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,
-        options: { emailRedirectTo: getEmailRedirectTo() },
       });
 
       if (error) {
         setResendMessage(error.message);
       } else {
+        setVerificationCode('');
         setResendMessage('A new verification email has been requested. Check your inbox and spam folder.');
       }
     } catch (err) {
@@ -91,11 +121,45 @@ export default function SignupPage() {
           </div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Verify your email</h2>
           <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-            We sent a verification link to <span className="font-semibold text-gray-900 dark:text-white">{email}</span>.
+            We sent a six-digit verification code to <span className="font-semibold text-gray-900 dark:text-white">{email}</span>.
           </p>
           <p className="mt-2 text-xs text-gray-500">
-            Please check your inbox or spam folder and click the link to activate your SkoollHub account.
+            Check your inbox or spam folder, then enter the code below to activate your SkoollHub account.
           </p>
+          <form onSubmit={handleVerifyEmail} className="mt-6 space-y-3">
+            <label htmlFor="verification-code" className="sr-only">
+              Six-digit verification code
+            </label>
+            <input
+              id="verification-code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              value={verificationCode}
+              onChange={(event) => {
+                setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                setVerificationError('');
+              }}
+              placeholder="000000"
+              aria-describedby={verificationError ? 'verification-error' : undefined}
+              className="w-full rounded-xl border border-gray-300 bg-transparent px-4 py-3 text-center font-mono text-xl tracking-[0.5em] text-gray-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 dark:border-gray-600 dark:text-white"
+            />
+            {verificationError && (
+              <p id="verification-error" role="alert" className="text-left text-sm text-red-600">
+                {verificationError}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={verifying || verificationCode.length !== 6}
+              className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {verifying ? 'Verifying...' : 'Verify email'}
+            </button>
+          </form>
           {resendMessage && (
             <p role="status" className="mt-4 text-sm text-gray-600 dark:text-gray-300">
               {resendMessage}
@@ -105,7 +169,7 @@ export default function SignupPage() {
             type="button"
             onClick={handleResendVerification}
             disabled={resending}
-            className="mt-6 w-full rounded-xl border border-indigo-200 px-4 py-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
+            className="mt-3 w-full rounded-xl border border-indigo-200 px-4 py-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
           >
             {resending ? 'Sending...' : 'Resend verification email'}
           </button>

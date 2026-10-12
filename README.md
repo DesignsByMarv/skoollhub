@@ -37,21 +37,20 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Authentication email setup
 
-Sign-up confirmation links return to `/auth/confirm`, which establishes the
-Supabase session before sending the user to the dashboard. In Supabase:
+New sign-ups enter a six-digit email verification code in the app. In Supabase:
 
 1. Enable email sign-ups and email confirmation under **Authentication →
    Providers → Email**.
-2. Set the project **Site URL** to `https://skoollhub.netlify.app` and allow
-   `https://skoollhub.netlify.app/auth/confirm` under **Authentication → URL
-   Configuration → Redirect URLs**. Add `http://localhost:3000/auth/confirm`
-   for local development.
+2. Under **Authentication → Email Templates → Confirm signup**, include
+   `{{ .Token }}` in the email body so users receive the six-digit code. Do not
+   use only `{{ .ConfirmationURL }}`; that sends a link instead of a code.
 3. Configure a custom SMTP provider under **Authentication → SMTP Settings**
    to send verification emails to users outside your Supabase organization.
 
 Supabase's default email sender is for testing: it only sends to pre-authorized
 team addresses and has a low sending limit. A resend button is available after
 sign-up; repeated attempts are still subject to Supabase's email rate limits.
+The `/auth/confirm` route remains available for any existing confirmation links.
 
 ## AI assistant setup
 

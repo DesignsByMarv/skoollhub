@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ArrowLeft, FileText, ImagePlus, LoaderCircle, MessageCircle, Paperclip, Send, Video } from 'lucide-react';
+import { ArrowLeft, FileText, ImagePlus, LoaderCircle, MessageCircle, Paperclip, Plus, Search, Send, UserRoundPlus, Video, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 type Contact = {
@@ -10,6 +10,7 @@ type Contact = {
   full_name: string;
   username: string;
   avatar_url: string | null;
+  department?: string | null;
 };
 type Message = {
   id: string;
@@ -56,6 +57,11 @@ function MessagesContent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
   const [search, setSearch] = useState('');
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [students, setStudents] = useState<Contact[]>([]);
+  const [searchingStudents, setSearchingStudents] = useState(false);
+  const [creatingChatFor, setCreatingChatFor] = useState('');
   const [currentUserId, setCurrentUserId] = useState('');
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [sending, setSending] = useState(false);
@@ -171,6 +177,36 @@ function MessagesContent() {
   }, [loadConversations, selectedId]);
 
   useEffect(() => {
+    if (!showNewChat) return;
+    let active = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setSearchingStudents(true);
+      try {
+        const query = studentSearch.trim();
+        const endpoint = query
+          ? `/api/social?search=${encodeURIComponent(query)}`
+          : '/api/social';
+        const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(await responseError(response));
+        const data = await response.json() as { suggestions: Contact[] };
+        if (active) setStudents(data.suggestions);
+      } catch (searchError) {
+        if (active && !(searchError instanceof DOMException && searchError.name === 'AbortError')) {
+          setError(searchError instanceof Error ? searchError.message : 'Could not find students.');
+        }
+      } finally {
+        if (active) setSearchingStudents(false);
+      }
+    }, studentSearch.trim() ? 250 : 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [showNewChat, studentSearch]);
+
+  useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, selectedId]);
 
@@ -202,6 +238,29 @@ function MessagesContent() {
     event.preventDefault();
     const content = messageText.trim();
     if (content) await sendMessage({ content, message_type: 'text' });
+  };
+
+  const startConversation = async (student: Contact) => {
+    if (creatingChatFor) return;
+    setCreatingChatFor(student.id);
+    setError('');
+    try {
+      const response = await fetch('/api/messages/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participant_ids: [student.id] }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
+      const data = await response.json() as { conversation: { id: string } };
+      await loadConversations();
+      setSelectedId(data.conversation.id);
+      setShowNewChat(false);
+      setStudentSearch('');
+    } catch (chatError) {
+      setError(chatError instanceof Error ? chatError.message : 'Could not start this conversation.');
+    } finally {
+      setCreatingChatFor('');
+    }
   };
 
   const handleFile = async (file: File | undefined) => {
@@ -243,10 +302,25 @@ function MessagesContent() {
   );
 
   return (
+    <>
     <section className="mx-auto flex h-[calc(100vh-4rem)] min-h-[32rem] max-w-7xl overflow-hidden bg-white dark:bg-zinc-950 sm:m-4 sm:h-[calc(100vh-6rem)] sm:rounded-2xl sm:border sm:border-slate-200 sm:dark:border-zinc-800">
       <aside className={`w-full shrink-0 flex-col border-r border-slate-200 dark:border-zinc-800 sm:flex sm:w-80 ${selectedConversation ? 'hidden' : 'flex'}`}>
         <div className="border-b border-slate-200 p-4 dark:border-zinc-800">
-          <h1 className="mb-4 text-xl font-bold text-slate-900 dark:text-white">Messages</h1>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white">Messages</h1>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-zinc-400">Your campus conversations</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setError(''); setShowNewChat(true); }}
+              aria-label="Start a new chat"
+              title="New message"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <Plus size={22} />
+            </button>
+          </div>
           <input
             type="search"
             value={search}
@@ -368,9 +442,73 @@ function MessagesContent() {
         <div className="hidden flex-1 flex-col items-center justify-center text-center text-slate-400 sm:flex">
           <MessageCircle size={44} />
           <h2 className="mt-4 text-base font-semibold text-slate-700 dark:text-zinc-200">Your messages</h2>
-          <p className="mt-1 text-sm">Choose a conversation or open a student profile to start a new chat.</p>
+          <p className="mt-1 text-sm">Choose a conversation or start a new one.</p>
+          <button type="button" onClick={() => setShowNewChat(true)} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
+            <Plus size={16} />New message
+          </button>
         </div>
       )}
     </section>
+    {showNewChat && (
+      <div role="presentation" onClick={() => setShowNewChat(false)} className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4">
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-chat-title"
+          onClick={(event) => event.stopPropagation()}
+          className="flex max-h-[min(640px,85vh)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <header className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-zinc-800">
+            <div>
+              <h2 id="new-chat-title" className="text-base font-bold text-slate-900 dark:text-white">New message</h2>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-zinc-400">Find a student to start a conversation.</p>
+            </div>
+            <button type="button" onClick={() => setShowNewChat(false)} aria-label="Close new message" className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800"><X size={18} /></button>
+          </header>
+          <label className="mx-4 mt-4 flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2.5 dark:bg-zinc-800">
+            <Search size={17} className="shrink-0 text-slate-400" />
+            <input
+              autoFocus
+              type="search"
+              value={studentSearch}
+              onChange={(event) => setStudentSearch(event.target.value)}
+              placeholder="Search name or username"
+              aria-label="Search students"
+              className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white"
+            />
+          </label>
+          {error && <p role="alert" className="mx-4 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{error}</p>}
+          <div className="min-h-48 flex-1 overflow-y-auto p-2">
+            {searchingStudents ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><LoaderCircle size={17} className="animate-spin" />Finding students</div>
+            ) : students.length ? students.map((student) => (
+              <button
+                key={student.id}
+                type="button"
+                disabled={Boolean(creatingChatFor)}
+                onClick={() => void startConversation(student)}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-slate-50 disabled:opacity-60 dark:hover:bg-zinc-800"
+              >
+                {student.avatar_url
+                  ? <img src={student.avatar_url} alt="" className="h-11 w-11 rounded-full object-cover" />
+                  : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">{initials(student.full_name)}</span>}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-slate-900 dark:text-white">{student.full_name}</span>
+                  <span className="mt-0.5 block truncate text-xs text-slate-500 dark:text-zinc-400">@{student.username}{student.department ? ` · ${student.department}` : ''}</span>
+                </span>
+                {creatingChatFor === student.id ? <LoaderCircle size={17} className="animate-spin text-indigo-600" /> : <UserRoundPlus size={17} className="text-slate-400" />}
+              </button>
+            )) : (
+              <div className="px-4 py-10 text-center">
+                <UserRoundPlus size={25} className="mx-auto text-slate-300" />
+                <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-zinc-200">{studentSearch ? 'No students found' : 'No students to suggest yet'}</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Try searching by their username or full name.</p>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    )}
+    </>
   );
 }

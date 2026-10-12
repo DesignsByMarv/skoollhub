@@ -12,9 +12,9 @@ import {
   KeyRound,
   LoaderCircle,
   Save,
+  Settings,
   ShieldCheck,
   Upload,
-  X,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -213,11 +213,16 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">Your account</p>
-        <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">Settings</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">Manage your profile, notification preferences, and account security.</p>
+    <div className="mx-auto max-w-[1000px] space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+      <header className="border-b border-slate-200 pb-5 dark:border-zinc-800">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300"><Settings size={19} /></span>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600 dark:text-indigo-300">Account center</p>
+            <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Settings</h1>
+          </div>
+        </div>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 dark:text-zinc-400">Manage how your SkoollHub profile appears to other students, your notifications, and your account security.</p>
       </header>
 
       {error && (
@@ -231,26 +236,41 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-[230px_1fr]">
-        <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900 md:flex-col md:overflow-visible">
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <button
-              type="button"
-              key={id}
-              onClick={() => { setActiveTab(id); setNotice(''); setError(''); }}
-              aria-current={activeTab === id ? 'page' : undefined}
-              className={`flex shrink-0 items-center gap-3 rounded-xl px-3 py-3 text-left text-xs font-semibold transition ${activeTab === id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-50 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}
-            >
-              <Icon size={17} />
-              {label}
+      <div className="grid gap-5 md:grid-cols-[250px_1fr]">
+        <nav aria-label="Settings sections" className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900">
+          {profile && (
+            <Link href="/profile" className="mb-2 flex items-center gap-3 rounded-xl border-b border-slate-100 px-3 py-4 transition hover:bg-slate-50 dark:border-zinc-800 dark:hover:bg-zinc-800">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-sm font-bold text-white">
+                {profile.avatar_url
+                  ? <Image src={profile.avatar_url} alt="" width={44} height={44} className="h-full w-full object-cover" />
+                  : profile.full_name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase()}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-semibold text-slate-900 dark:text-white">{profile.full_name}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-slate-500 dark:text-zinc-400">@{profile.username}</span>
+              </span>
+            </Link>
+          )}
+          <div className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+            {tabs.map(({ id, label, icon: Icon }) => (
+              <button
+                type="button"
+                key={id}
+                onClick={() => { setActiveTab(id); setNotice(''); setError(''); }}
+                aria-current={activeTab === id ? 'page' : undefined}
+                className={`flex shrink-0 items-center gap-3 rounded-xl px-3 py-3 text-left text-xs font-semibold transition md:w-full ${activeTab === id ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-50 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}
+              >
+                <Icon size={17} />
+                {label}
+                <ChevronRight size={15} className="ml-auto hidden md:block" />
+              </button>
+            ))}
+            <Link href="/profile" className="flex shrink-0 items-center gap-3 rounded-xl px-3 py-3 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 dark:text-zinc-400 dark:hover:bg-zinc-800 md:w-full">
+              <CircleUserRound size={17} />
+              View my profile
               <ChevronRight size={15} className="ml-auto hidden md:block" />
-            </button>
-          ))}
-          <Link href="/profile" className="flex shrink-0 items-center gap-3 rounded-xl px-3 py-3 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 dark:text-zinc-400 dark:hover:bg-zinc-800">
-            <CircleUserRound size={17} />
-            View my profile
-            <ChevronRight size={15} className="ml-auto hidden md:block" />
-          </Link>
+            </Link>
+          </div>
         </nav>
 
         <section className="min-h-[430px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-7">

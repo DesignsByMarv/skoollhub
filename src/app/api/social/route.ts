@@ -63,6 +63,33 @@ export async function GET(request: Request) {
       });
     }
 
+    const search = url.searchParams.get('search')?.trim().replace(/^@/, '').slice(0, 40);
+    if (search) {
+      const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+      const [usernameMatches, nameMatches] = await Promise.all([
+        supabase.from('profiles')
+          .select('id, full_name, username, avatar_url, department')
+          .neq('id', user.id)
+          .ilike('username', pattern)
+          .limit(12),
+        supabase.from('profiles')
+          .select('id, full_name, username, avatar_url, department')
+          .neq('id', user.id)
+          .ilike('full_name', pattern)
+          .limit(12),
+      ]);
+      const searchError = usernameMatches.error ?? nameMatches.error;
+      if (searchError) {
+        console.error('Student search failed:', searchError.message);
+        return errorResponse('Could not search for students.', 500);
+      }
+      const suggestions = new Map([
+        ...(usernameMatches.data ?? []),
+        ...(nameMatches.data ?? []),
+      ].map((profile) => [profile.id, profile]));
+      return NextResponse.json({ suggestions: [...suggestions.values()].slice(0, 12) });
+    }
+
     const { data: followed, error: followedError } = await supabase
       .from('follows')
       .select('following_id')

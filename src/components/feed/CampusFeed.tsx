@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Plus,
   Send,
+  Share2,
   Trash2,
   Video,
   X,
@@ -80,6 +81,7 @@ export default function CampusFeed() {
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
+  const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const mediaPreview = useMemo(
     () => mediaFile ? URL.createObjectURL(mediaFile) : null,
     [mediaFile]
@@ -145,6 +147,16 @@ export default function CampusFeed() {
       return false;
     } finally {
       setBusyPostId(null);
+    }
+  };
+
+  const sharePost = async (postId: string) => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/feed#post-${postId}`);
+      setCopiedPostId(postId);
+      window.setTimeout(() => setCopiedPostId((current) => current === postId ? null : current), 2500);
+    } catch {
+      setError('Could not copy this post link. Please copy the page address from your browser.');
     }
   };
 
@@ -281,7 +293,7 @@ export default function CampusFeed() {
 
   return (
     <section className="mx-auto w-full max-w-3xl space-y-5 select-text">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div id="share-post" className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-5">
         <div className="mb-4">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">Share with your campus</h2>
           <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Post an update, ask a question, or share something useful.</p>
@@ -410,18 +422,20 @@ export default function CampusFeed() {
       ) : posts.length ? (
         <div className="space-y-4">
           {posts.map((post) => (
-            <article key={post.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <article id={`post-${post.id}`} key={post.id} className="scroll-mt-24 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-start gap-3 p-4">
-                {post.avatarUrl ? (
-                  <img src={post.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
-                ) : (
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                    {initials(post.author)}
-                  </span>
-                )}
+                <Link href={`/profile/${encodeURIComponent(post.handle)}`} aria-label={`View ${post.author}'s profile`} className="shrink-0">
+                  {post.avatarUrl ? (
+                    <img src={post.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                      {initials(post.author)}
+                    </span>
+                  )}
+                </Link>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="truncate text-sm font-bold text-slate-900 dark:text-white">{post.author}</span>
+                    <Link href={`/profile/${encodeURIComponent(post.handle)}`} className="truncate text-sm font-bold text-slate-900 hover:underline dark:text-white">{post.author}</Link>
                     <span className="truncate text-xs text-slate-400">@{post.handle}</span>
                     <span className="text-xs text-slate-400">· {relativeTime(post.timestamp)}</span>
                   </div>
@@ -472,7 +486,7 @@ export default function CampusFeed() {
               )}
 
               <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 dark:border-zinc-800">
-                <div className="flex items-center gap-5">
+                <div className="flex items-center gap-4 sm:gap-5">
                   <button
                     type="button"
                     onClick={() => void postAction({ action: 'like', postId: post.id, isLiked: !post.isLiked }, post.id)}
@@ -490,6 +504,15 @@ export default function CampusFeed() {
                   >
                     <MessageCircle size={17} />
                     {post.commentsCount} {post.commentsCount === 1 ? 'comment' : 'comments'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void sharePost(post.id)}
+                    aria-label="Copy post link"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 transition hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300"
+                  >
+                    <Share2 size={17} />
+                    <span className="hidden sm:inline">{copiedPostId === post.id ? 'Copied' : 'Share'}</span>
                   </button>
                 </div>
                 <button

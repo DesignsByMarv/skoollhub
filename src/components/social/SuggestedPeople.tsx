@@ -56,34 +56,40 @@ export default function SuggestedPeople() {
   };
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="text-sm font-bold text-slate-900 dark:text-white">People to follow</h2>
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">Discover students</h2>
+          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-zinc-400">Find people from your campus community.</p>
+        </div>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">For you</span>
+      </div>
       {error && <p role="alert" className="mt-2 text-xs text-rose-600 dark:text-rose-300">{error}</p>}
       {people.length ? (
-        <ul className="mt-3 space-y-3">
+        <ul className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
           {people.map((person) => (
-            <li key={person.id} className="flex items-center gap-2">
-              <Link href={`/profile/${encodeURIComponent(person.username)}`} className="flex min-w-0 flex-1 items-center gap-2">
+            <li key={person.id} className="flex w-28 shrink-0 flex-col items-center rounded-xl border border-slate-100 px-2.5 py-3 text-center dark:border-zinc-800">
+              <Link href={`/profile/${encodeURIComponent(person.username)}`} className="flex w-full flex-col items-center">
                 {person.avatar_url
-                  ? <img src={person.avatar_url} alt="" className="h-9 w-9 rounded-full object-cover" />
-                  : <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">{person.full_name.slice(0, 1).toUpperCase()}</span>}
-                <span className="min-w-0">
-                  <span className="block truncate text-xs font-semibold text-slate-800 dark:text-zinc-100">{person.full_name}</span>
-                  <span className="block truncate text-[10px] text-slate-500 dark:text-zinc-400">@{person.username}</span>
+                  ? <img src={person.avatar_url} alt="" className="h-14 w-14 rounded-full border-2 border-white object-cover ring-2 ring-fuchsia-300 dark:border-zinc-900" />
+                  : <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-lg font-bold text-white ring-2 ring-fuchsia-300 dark:border-zinc-900">{person.full_name.slice(0, 1).toUpperCase()}</span>}
+                <span className="mt-2 w-full min-w-0">
+                  <span className="block truncate text-[11px] font-semibold text-slate-800 dark:text-zinc-100">{person.full_name}</span>
+                  <span className="mt-0.5 block truncate text-[10px] text-slate-500 dark:text-zinc-400">@{person.username}</span>
                 </span>
               </Link>
               <button
                 type="button"
                 onClick={() => void toggleFollow(person.id)}
                 disabled={loading}
-                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-indigo-50 px-2 py-1.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 dark:bg-indigo-950 dark:text-indigo-200"
+                className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-indigo-50 px-2 py-1.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 dark:bg-indigo-950 dark:text-indigo-200"
               >
                 <UserPlus size={12} />{following.includes(person.id) ? 'Following' : 'Follow'}
               </button>
             </li>
           ))}
         </ul>
-      ) : !error ? <p className="mt-3 text-xs text-slate-500 dark:text-zinc-400">No suggestions yet. Check back soon.</p> : null}
+      ) : !error ? <p className="mt-3 text-xs text-slate-500 dark:text-zinc-400">No new student suggestions right now.</p> : null}
     </section>
   );
 }

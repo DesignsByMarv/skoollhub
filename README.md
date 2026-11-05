@@ -56,8 +56,8 @@ The `/auth/confirm` route remains available for any existing confirmation links.
 
 The app's **Home** navigation opens `/feed`; selecting Home while already on
 the feed reloads it. `/dashboard` redirects to the same feed. Housing,
-roommate matching, classes/timetable, and the AI assistant currently show an
-"not available right now" notice.
+roommate matching, classes/timetable, and the AI assistant use the SkoollHub
+Supabase project.
 
 The feed supports posts, likes, comments, bookmarks, image/video uploads, and
 optional location sharing. Comment authors link to their public profiles.
@@ -83,6 +83,45 @@ location sharing. Location-based recommendations are only enabled after the
 student explicitly opts in; stored coordinates are rounded to approximately
 1 km. Nearby-place cards use a limited static campus-city directory.
 
+## Housing, academics, and subscriptions
+
+Before using housing, roommate matching, the planner, course materials, or
+plans in production, apply
+`supabase/migrations/20261104120000_student_life_modules.sql` to the SkoollHub
+Supabase project after the earlier migrations. It adds the tables and
+row-level security policies for these features, creates the upload bucket
+when missing, and protects administrative role/review fields. Admin users
+must be assigned by a trusted administrator in Supabase; users cannot promote
+their own account.
+
+Paystack checkout is intentionally unavailable until configured. Set
+`PAYSTACK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `NEXT_PUBLIC_SITE_URL`
+in Netlify's environment settings; set `HOUSING_CONTACT_FEE_KOBO` to the
+intended contact-unlock price in kobo. Configure subscription prices and
+activate plans in the admin page only after test payments have been verified.
+Set the Paystack webhook URL to `/api/payments/webhook`. Subscriptions run
+for a fixed month or year and do not auto-renew. Never publish or paste a
+service-role or Paystack secret key.
+
+## Install SkoollHub on a phone
+
+SkoollHub is an installable Progressive Web App (PWA). After deploying over
+HTTPS, open the site on a phone and tap the download icon in the app header or
+sign-in/sign-up screen. Supported browsers show their install prompt. On
+iPhone/iPad, use Safari's **Share → Add to Home Screen** option.
+
+On launch, the app briefly shows the SkoollHub sparkle logo before revealing
+the current page.
+
+The service worker provides an offline notice when navigation cannot reach the
+site. It does not cache private pages, messages, or API responses; using the
+feed and other account features still requires an internet connection.
+
+The Android and iOS folders contain Capacitor shells configured to load the
+deployed Netlify site. Installing the PWA adds SkoollHub to a device's home
+screen; publishing a store-distributed Android or iOS app is separate and
+requires building/signing in Android Studio or Xcode and developer accounts.
+
 For reliable cross-network voice calls, set `TURN_SERVER_URLS` (comma-separated
 `turn:`/`turns:` URLs) and `TURN_SHARED_SECRET` to the TURN provider's REST
 shared-secret values in Netlify's private environment variables, then
@@ -91,8 +130,9 @@ temporary one-hour credentials through an authenticated server endpoint.
 
 ## AI provider setup
 
-The AI page is temporarily unavailable in the app. The `/api/ai` endpoint is
-still present; it requires `GEMINI_API_KEY` to run. `GEMINI_MODEL` is optional
+The AI assistant is available from the dashboard's **Ask AI** button or the
+AI Assistant page. The `/api/ai` endpoint requires `GEMINI_API_KEY` to run.
+`GEMINI_MODEL` is optional
 and defaults to `gemini-2.5-flash`. `TAVILY_API_KEY` is only needed by the
 endpoint's web-search modes.
 
@@ -111,4 +151,10 @@ endpoint's web-search modes.
 Keep `GEMINI_API_KEY`, `TAVILY_API_KEY`, and `TURN_SHARED_SECRET` private: do
 not prefix them with `NEXT_PUBLIC_` or expose them in client-side code. Add the
 required values to the Netlify site's environment variables before deploying.
-AI chat requires a signed-in, email-confirmed account.
+AI chat requires a signed-in, email-confirmed account. Secure subscription and
+housing-contact checkout require the private `PAYSTACK_SECRET_KEY` and
+`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL`, and a configured
+`HOUSING_CONTACT_FEE_KOBO`. Set plan prices in `subscription_plans` and enable
+the plans only after Paystack is configured. Register
+`/api/payments/webhook` as a Paystack webhook. Paid subscriptions are fixed
+term; they do not auto-renew.

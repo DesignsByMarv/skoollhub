@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Eye, EyeOff, Mail, Lock, User, AtSign, CheckCircle2 } from 'lucide-react';
 import { isValidPhoneNumber, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
 import { countries, courseOptions, defaultCountry } from '@/lib/countries';
+import InstallAppButton from '@/components/pwa/InstallAppButton';
 
 type School = { id: string; name: string; short_name: string; city: string; state: string };
 
@@ -236,6 +237,7 @@ export default function SignupPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-stone-100 p-4 pb-24">
+      <InstallAppButton className="fixed right-4 top-4 z-50 bg-white shadow-sm dark:bg-zinc-900" />
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-md dark:bg-gray-800">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Create your SkoollHub Account</h1>

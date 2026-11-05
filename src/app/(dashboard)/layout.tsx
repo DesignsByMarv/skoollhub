@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import AppNavbar from '@/components/layout/AppNavbar';
+import DashboardAssistant from '@/components/layout/DashboardAssistant';
 
 export default function DashboardLayout({
   children,
@@ -11,9 +12,10 @@ export default function DashboardLayout({
       <Suspense fallback={<div className="h-16 border-b border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-950" />}>
         <AppNavbar />
       </Suspense>
-      <main className="app-page min-h-[calc(100vh-4rem)] pb-24 md:pb-8">
+      <main className="app-page min-h-[calc(100vh-4rem)] pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-8">
         {children}
       </main>
+      <DashboardAssistant />
     </div>
   );
 }

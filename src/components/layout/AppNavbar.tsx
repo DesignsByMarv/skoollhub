@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   BookOpen,
+  CreditCard,
   Check,
   CircleUserRound,
   House,
@@ -12,11 +14,13 @@ import {
   MessageCircle,
   Moon,
   Settings,
+  ShieldCheck,
   Sparkles,
   Sun,
   Users,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import InstallAppButton from '@/components/pwa/InstallAppButton';
 
 const items = [
   { label: 'Home', href: '/feed', icon: LayoutDashboard },
@@ -25,12 +29,9 @@ const items = [
   { label: 'Classes', href: '/timetable', icon: BookOpen },
   { label: 'Messages', href: '/messages', icon: MessageCircle },
   { label: 'AI Assistant', href: '/ai-assistant', icon: Sparkles },
+  { label: 'Plans', href: '/subscriptions', icon: CreditCard },
   { label: 'Profile', href: '/profile', icon: CircleUserRound },
 ];
-
-const mobileItems = items.filter((item) =>
-  ['/feed', '/houses', '/timetable', '/messages', '/profile', '/ai-assistant'].includes(item.href)
-);
 
 function isCurrent(pathname: string, href: string) {
   return pathname === href || (href !== '/dashboard' && pathname.startsWith(`${href}/`));
@@ -40,12 +41,13 @@ export default function AppNavbar() {
   const pathname = usePathname();
   const [unreadCount, setUnreadCount] = useState(0);
   const [messageNotice, setMessageNotice] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const refreshUnreadCount = useCallback(async () => {
     try {
       const response = await fetch('/api/messages/unread', { cache: 'no-store' });
       if (!response.ok) return;
-      const data = await response.json() as { unreadCount: number };
+      const data = (await response.json()) as { unreadCount: number };
       setUnreadCount(data.unreadCount);
     } catch (error) {
       console.error('Could not refresh unread message badge:', error);
@@ -63,45 +65,66 @@ export default function AppNavbar() {
     const supabase = createClient();
     let active = true;
     let channel: ReturnType<typeof supabase.channel> | null = null;
-    void supabase.auth.getUser().then(({ data: { user } }) => {
+
+    void supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!active || !user) return;
+      const { data: profile, error: profileError } = await supabase.from('profiles')
+        .select('role').eq('id', user.id).maybeSingle();
+      if (!active) return;
+      if (profileError) console.error('Could not load account role for navigation:', profileError.message);
+      setIsAdmin(profile?.role === 'admin' || profile?.role === 'moderator');
+
+      // Clean up previous channel if one exists
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
+
       channel = supabase
         .channel(`inbox-notifications:${user.id}`)
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-        }, (payload) => {
-          const message = payload.new as { sender_id?: string };
-          if (message.sender_id === user.id) return;
-          let shouldNotify = true;
-          const savedPreferences = window.localStorage.getItem('skoollhub-notifications');
-          if (savedPreferences) {
-            try {
-              const preferences = JSON.parse(savedPreferences) as { newMessages?: boolean };
-              shouldNotify = preferences.newMessages !== false;
-            } catch {
-              window.localStorage.removeItem('skoollhub-notifications');
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+          },
+          (payload) => {
+            const message = payload.new as { sender_id?: string };
+            if (message.sender_id === user.id) return;
+            let shouldNotify = true;
+            const savedPreferences = window.localStorage.getItem('skoollhub-notifications');
+            if (savedPreferences) {
+              try {
+                const preferences = JSON.parse(savedPreferences) as { newMessages?: boolean };
+                shouldNotify = preferences.newMessages !== false;
+              } catch {
+                window.localStorage.removeItem('skoollhub-notifications');
+              }
             }
+            if (shouldNotify) {
+              setMessageNotice(true);
+              window.setTimeout(() => setMessageNotice(false), 5000);
+            }
+            void refreshUnreadCount();
           }
-          if (shouldNotify) {
-            setMessageNotice(true);
-            window.setTimeout(() => setMessageNotice(false), 5000);
-          }
-          void refreshUnreadCount();
-        })
+        )
         .subscribe((status) => {
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             console.error('Live inbox notifications are unavailable.');
           }
         });
+
       void refreshUnreadCount();
     });
+
     const poll = window.setInterval(() => void refreshUnreadCount(), 30_000);
+
     return () => {
       active = false;
       window.clearInterval(poll);
-      if (channel) void supabase.removeChannel(channel);
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
   }, [refreshUnreadCount]);
 
@@ -110,22 +133,26 @@ export default function AppNavbar() {
       {unreadCount > 99 ? '99+' : unreadCount}
     </span>
   ) : null;
+  const navigationItems = isAdmin
+    ? [...items, { label: 'Admin', href: '/admin', icon: ShieldCheck }]
+    : items;
+  const visibleMobileItems = navigationItems.filter((item) =>
+    ['/feed', '/houses', '/timetable', '/messages', '/profile', '/ai-assistant', '/subscriptions', '/admin'].includes(item.href)
+  );
 
   return (
     <>
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/95">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6">
           <Link href="/dashboard" className="flex shrink-0 items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
-              <Sparkles size={18} />
-            </span>
+            <Image src="/icons/skoollhub-192.png" alt="" width={36} height={36} className="rounded-xl shadow-sm" />
             <span className="hidden text-base font-extrabold tracking-tight text-slate-900 dark:text-white sm:inline">
               SkoollHub
             </span>
           </Link>
 
           <nav aria-label="Main navigation" className="hidden min-w-0 flex-1 items-center justify-center gap-1 xl:flex">
-            {items.map(({ label, href, icon: Icon }) => {
+            {navigationItems.map(({ label, href, icon: Icon }) => {
               const active = isCurrent(pathname, href);
               return (
                 <Link
@@ -149,6 +176,7 @@ export default function AppNavbar() {
           </nav>
 
           <div className="flex shrink-0 items-center gap-1.5">
+            <InstallAppButton />
             <Link
               href="/feed"
               className="hidden items-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2.5 text-xs font-semibold text-white transition hover:bg-indigo-700 sm:inline-flex"
@@ -189,7 +217,7 @@ export default function AppNavbar() {
 
         <nav aria-label="Main navigation" className="hidden overflow-x-auto border-t border-slate-100 px-3 py-2 dark:border-zinc-800 md:flex xl:hidden">
           <div className="mx-auto flex min-w-max items-center gap-1">
-            {items.map(({ label, href, icon: Icon }) => {
+            {navigationItems.map(({ label, href, icon: Icon }) => {
               const active = isCurrent(pathname, href);
               return (
                 <Link
@@ -216,9 +244,9 @@ export default function AppNavbar() {
 
       <nav
         aria-label="Mobile navigation"
-        className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-6 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 md:hidden"
+        className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-50 grid ${isAdmin ? 'grid-cols-8' : 'grid-cols-7'} rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 md:hidden`}
       >
-        {mobileItems.map(({ label, href, icon: Icon }) => {
+        {visibleMobileItems.map(({ label, href, icon: Icon }) => {
           const active = isCurrent(pathname, href);
           return (
             <Link
@@ -242,6 +270,7 @@ export default function AppNavbar() {
           );
         })}
       </nav>
+
       {messageNotice && pathname !== '/messages' && (
         <Link
           href="/messages"

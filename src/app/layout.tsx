@@ -1,12 +1,12 @@
 import type { Viewport, Metadata } from 'next';
+import AppLaunchSplash from '@/components/pwa/AppLaunchSplash';
+import PwaServiceWorker from '@/components/pwa/PwaServiceWorker';
 import './globals.css';
 
 export const viewport: Viewport = {
-  themeColor: '#7E22CE',
+  themeColor: '#4f46e5',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export const metadata: Metadata = {
@@ -17,6 +17,10 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'SkoollHub',
+  },
+  icons: {
+    icon: '/icons/skoollhub-192.png',
+    apple: '/icons/skoollhub-180.png',
   },
 };
 
@@ -29,6 +33,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
+        <AppLaunchSplash />
+        <PwaServiceWorker />
         {children}
       </body>
     </html>

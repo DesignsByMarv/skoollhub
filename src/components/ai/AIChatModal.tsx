@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Bot, X, Send, Sparkles, User } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  sources?: { title: string; url: string }[];
 }
 
 export default function AIChatModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -14,10 +15,12 @@ export default function AIChatModal({ isOpen, onClose }: { isOpen: boolean; onCl
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'chat' | 'web' | 'research' | 'social'>('chat');
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSend = async (e: React.FormEvent) => {
+  const handleSend = async (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
@@ -30,17 +33,23 @@ export default function AIChatModal({ isOpen, onClose }: { isOpen: boolean; onCl
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userText }),
+        body: JSON.stringify({ query: userText, mode, conversationId }),
       });
 
-      const data = await res.json();
+      const data = await res.json() as {
+        reply?: string;
+        error?: string;
+        conversation?: { id: string };
+        sources?: { title: string; url: string }[];
+      };
       if (res.ok) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
+        setConversationId(data.conversation?.id ?? conversationId);
+        setMessages((prev) => [...prev, { role: 'assistant', content: data.reply || 'The assistant returned an empty response.', sources: data.sources }]);
       } else {
-        setMessages((prev) => [...prev, { role: 'assistant', content: 'Sorry, I ran into an error fetching that information.' }]);
+        setMessages((prev) => [...prev, { role: 'assistant', content: data.error || 'The assistant could not complete your request.' }]);
       }
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Network error. Please try again.' }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Could not reach the assistant. Check your connection and try again.' }]);
     } finally {
       setLoading(false);
     }
@@ -78,7 +87,8 @@ export default function AIChatModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   ? 'bg-purple-600 text-white rounded-tr-none' 
                   : 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 rounded-tl-none'
               }`}>
-                {msg.content}
+                <span className="whitespace-pre-wrap">{msg.content}</span>
+                {!!msg.sources?.length && <span className="mt-2 flex flex-wrap gap-2">{msg.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="underline">{source.title}</a>)}</span>}
               </div>
             </div>
           ))}
@@ -92,11 +102,26 @@ export default function AIChatModal({ isOpen, onClose }: { isOpen: boolean; onCl
 
         {/* Input Form */}
         <form onSubmit={handleSend} className="p-3 border-t border-stone-200 dark:border-stone-800 flex items-center gap-2 bg-stone-50 dark:bg-stone-900 pb-[env(safe-area-inset-bottom)]">
+          <label className="sr-only" htmlFor="ai-mode">Assistant mode</label>
+          <select
+            id="ai-mode"
+            value={mode}
+            onChange={(event) => setMode(event.target.value as typeof mode)}
+            disabled={loading}
+            className="max-w-28 rounded-xl border border-stone-300 bg-white px-2 py-2.5 text-xs text-stone-700 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200"
+          >
+            <option value="chat">Chat</option>
+            <option value="web">Web search</option>
+            <option value="research">Research</option>
+            <option value="social">Campus news</option>
+          </select>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask AI anything..."
+            aria-label="Message the AI assistant"
+            maxLength={4000}
             className="flex-1 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 px-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-600 dark:text-white"
           />
           <button

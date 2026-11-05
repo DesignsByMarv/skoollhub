@@ -1,41 +1,51 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Home, Building2, Users, GraduationCap, MessageSquare, Bot, User } from 'lucide-react';
 
-export default function Navbar({ onOpenCreatePost }: { onOpenCreatePost?: () => void }) {
+const navItems = [
+  { href: '/home', label: 'Home', icon: Home },
+  { href: '/housing', label: 'Housing', icon: Building2 },
+  { href: '/roommates', label: 'Roommates', icon: Users },
+  { href: '/classes', label: 'Classes', icon: GraduationCap },
+  { href: '/messages', label: 'Messages', icon: MessageSquare },
+  { href: '/ai-assistant', label: 'AI Assistant', icon: Bot },
+  { href: '/profile', label: 'Profile', icon: User },
+];
+
+export function Navbar() {
+  const pathname = usePathname();
+
   return (
-    <nav className="flex items-center justify-between px-4 py-3 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40">
-      <div className="font-bold text-lg text-gray-900 dark:text-white">
-        SkoollHub
-      </div>
+    <nav className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+      {/* Brand Logo */}
+      <Link href="/home" className="flex items-center gap-2 font-bold text-indigo-600 dark:text-indigo-400">
+        <span className="text-xl">SkoollHub</span>
+      </Link>
 
-      <div className="flex items-center gap-3 text-xs font-medium text-gray-700 dark:text-gray-300">
-        <Link href="/feed" className="hover:text-blue-500 flex items-center gap-1">
-          🏠 Home
-        </Link>
-        <Link href="/houses" className="hover:text-blue-500 flex items-center gap-1">
-          🏢 Hostels
-        </Link>
-        <Link href="/roommates" className="hover:text-blue-500 flex items-center gap-1">
-          👥 Roommates
-        </Link>
+      {/* Navigation Links - Icon Only */}
+      <div className="flex items-center gap-1 sm:gap-2">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = pathname.startsWith(item.href);
 
-        {/* ➕ CREATE POST BUTTON (MIDDLE BETWEEN ROOMMATES & CLASSES) */}
-        <button
-          type="button"
-          onClick={onOpenCreatePost}
-          className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white font-bold text-lg hover:scale-105 active:scale-95 shadow-md transition-all"
-          title="Create Post"
-        >
-          +
-        </button>
-
-        <Link href="/timetable" className="hover:text-blue-500 flex items-center gap-1">
-          📅 Classes
-        </Link>
-        <Link href="/ai-assistant" className="hover:text-blue-500 flex items-center gap-1">
-          🤖 AI Helper
-        </Link>
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              title={item.label}
+              aria-label={item.label}
+              className={`flex h-10 w-10 items-center justify-center rounded-xl transition ${
+                isActive
+                  ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-900'
+              }`}
+            >
+              <Icon size={20} />
+            </Link>
+          );
+        })}
       </div>
     </nav>
   );

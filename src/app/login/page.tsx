@@ -151,7 +151,7 @@ export default function LoginPage() {
               
               {/* Brand Logo Header */}
               <div className="mb-6 flex items-center gap-2">
-                <Image src="/icons/skoollhub-192.png" alt="" width={40} height={40} className="rounded-xl shadow-md" />
+                <Image src="/icons/skoollhub-192.png" alt="SkoollHub" width={40} height={40} className="rounded-xl shadow-md" />
                 <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">SkoollHub</span>
               </div>
 
@@ -225,19 +225,6 @@ export default function LoginPage() {
         </div>
       </main>
 
-      {/* Page Footer */}
-      <footer className="py-6 text-center text-[11px] text-slate-400 dark:text-zinc-500 space-y-2">
-        <div className="flex flex-wrap justify-center gap-4">
-          <a href="#" className="hover:underline">About</a>
-          <a href="#" className="hover:underline">Housing</a>
-          <a href="#" className="hover:underline">Roommates</a>
-          <a href="#" className="hover:underline">Classes</a>
-          <a href="#" className="hover:underline">Privacy</a>
-          <a href="#" className="hover:underline">Terms</a>
-          <a href="#" className="hover:underline">Campus Leads</a>
-        </div>
-        <p>© 2026 SkoollHub from MARV</p>
-      </footer>
     </div>
   );
 }

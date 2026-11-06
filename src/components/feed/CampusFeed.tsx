@@ -18,6 +18,8 @@ import {
   Trash2,
   Video,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -82,6 +84,8 @@ export default function CampusFeed() {
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
+  const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null);
+  const stories = useMemo(() => posts.filter((post) => post.mediaUrl && post.mediaType), [posts]);
   const mediaPreview = useMemo(
     () => mediaFile ? URL.createObjectURL(mediaFile) : null,
     [mediaFile]
@@ -151,12 +155,18 @@ export default function CampusFeed() {
   };
 
   const sharePost = async (postId: string) => {
+    const url = `${window.location.origin}/feed#post-${postId}`;
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/feed#post-${postId}`);
+      if (navigator.share) {
+        await navigator.share({ title: 'SkoollHub post', text: 'Check out this campus post on SkoollHub.', url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
       setCopiedPostId(postId);
       window.setTimeout(() => setCopiedPostId((current) => current === postId ? null : current), 2500);
-    } catch {
-      setError('Could not copy this post link. Please copy the page address from your browser.');
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === 'AbortError') return;
+      setError(shareError instanceof Error ? `Could not share this post: ${shareError.message}` : 'Could not share this post.');
     }
   };
 
@@ -255,6 +265,9 @@ export default function CampusFeed() {
   const handleLoadComments = async (post: Post) => {
     const isExpanded = !expandedComments[post.id];
     setExpandedComments((current) => ({ ...current, [post.id]: isExpanded }));
+    if (isExpanded) {
+      window.setTimeout(() => document.getElementById(`comment-${post.id}`)?.focus(), 0);
+    }
     if (!isExpanded || post.comments.length) return;
 
     setBusyPostId(post.id);
@@ -293,6 +306,36 @@ export default function CampusFeed() {
 
   return (
     <section className="mx-auto w-full max-w-3xl space-y-5 select-text">
+      <div>
+        <h1 className="mb-3 text-lg font-bold text-slate-900 dark:text-white">Campus stories</h1>
+        {stories.length ? (
+          <div className="flex gap-4 overflow-x-auto rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {stories.map((story, index) => (
+              <button
+                key={story.id}
+                type="button"
+                onClick={() => setActiveStoryIndex(index)}
+                aria-label={`Watch ${story.handle}'s story`}
+                className="flex w-16 shrink-0 flex-col items-center gap-1.5"
+              >
+                <span className="rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 p-[2px]">
+                  <span className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-slate-100 text-xl dark:border-zinc-900 dark:bg-zinc-800">
+                    {story.avatarUrl
+                      ? <img src={story.avatarUrl} alt="" className="h-full w-full object-cover" />
+                      : <span aria-hidden="true">🧑‍🎓</span>}
+                  </span>
+                </span>
+                <span className="w-full truncate text-center text-[11px] text-slate-600 dark:text-zinc-400">@{story.handle}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+            No campus stories yet. Posts with a photo or video appear here.
+          </p>
+        )}
+      </div>
+
       <div id="share-post" className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-5">
         <div className="mb-4">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">Share with your campus</h2>
@@ -508,7 +551,7 @@ export default function CampusFeed() {
                   <button
                     type="button"
                     onClick={() => void sharePost(post.id)}
-                    aria-label="Copy post link"
+                    aria-label="Share post"
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 transition hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300"
                   >
                     <Share2 size={17} />
@@ -548,6 +591,7 @@ export default function CampusFeed() {
                   )}
                   <form onSubmit={(event) => void handleComment(event, post.id)} className="flex items-center gap-2">
                     <input
+                      id={`comment-${post.id}`}
                       value={commentDrafts[post.id] ?? ''}
                       onChange={(event) => setCommentDrafts((current) => ({ ...current, [post.id]: event.target.value }))}
                       maxLength={1000}
@@ -576,6 +620,61 @@ export default function CampusFeed() {
           </span>
           <h3 className="mt-4 text-sm font-bold text-slate-900 dark:text-white">No posts here yet</h3>
           <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Be the first to share something with your campus.</p>
+        </div>
+      )}
+
+      {activeStoryIndex !== null && stories[activeStoryIndex] && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${stories[activeStoryIndex].handle}'s story`}
+          onClick={() => setActiveStoryIndex(null)}
+        >
+          <div
+            className="relative flex h-[min(85vh,760px)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-black"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                {stories[activeStoryIndex].avatarUrl
+                  ? <img src={stories[activeStoryIndex].avatarUrl} alt="" className="h-9 w-9 rounded-full object-cover" />
+                  : <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-700 text-lg">🧑‍🎓</span>}
+                <span>@{stories[activeStoryIndex].handle}</span>
+              </div>
+              <button type="button" onClick={() => setActiveStoryIndex(null)} aria-label="Close story" className="rounded-full bg-black/40 p-2 text-white">
+                <X size={20} />
+              </button>
+            </div>
+            {stories[activeStoryIndex].mediaType === 'video' ? (
+              <video src={stories[activeStoryIndex].mediaUrl ?? undefined} controls autoPlay playsInline className="h-full w-full object-contain" />
+            ) : (
+              <img src={stories[activeStoryIndex].mediaUrl ?? ''} alt={`Story from ${stories[activeStoryIndex].author}`} className="h-full w-full object-contain" />
+            )}
+            {stories.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Previous story"
+                  onClick={() => setActiveStoryIndex((activeStoryIndex + stories.length - 1) % stories.length)}
+                  className="absolute left-2 top-1/2 rounded-full bg-black/50 p-2 text-white"
+                >
+                  <ChevronLeft size={22} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next story"
+                  onClick={() => setActiveStoryIndex((activeStoryIndex + 1) % stories.length)}
+                  className="absolute right-2 top-1/2 rounded-full bg-black/50 p-2 text-white"
+                >
+                  <ChevronRight size={22} />
+                </button>
+              </>
+            )}
+            <p className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-5 pt-12 text-sm text-white">
+              {stories[activeStoryIndex].content}
+            </p>
+          </div>
         </div>
       )}
     </section>

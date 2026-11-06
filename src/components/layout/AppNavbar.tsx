@@ -5,9 +5,9 @@ import Image from 'next/image';
 import { useCallback, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
+  Bell,
   BookOpen,
   CreditCard,
-  Check,
   CircleUserRound,
   House,
   LayoutDashboard,
@@ -22,35 +22,66 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import InstallAppButton from '@/components/pwa/InstallAppButton';
 
-const items = [
+type NavItem = {
+  label: string;
+  href: string;
+  icon: typeof LayoutDashboard;
+};
+
+type ProfileSummary = {
+  username: string;
+  full_name: string;
+  avatar_url: string | null;
+  role: string | null;
+};
+
+const items: NavItem[] = [
   { label: 'Home', href: '/feed', icon: LayoutDashboard },
-  { label: 'Housing', href: '/houses', icon: House },
+  { label: 'Explore', href: '/houses', icon: House },
   { label: 'Roommates', href: '/roommates', icon: Users },
   { label: 'Classes', href: '/timetable', icon: BookOpen },
   { label: 'Messages', href: '/messages', icon: MessageCircle },
+  { label: 'Notifications', href: '/notifications', icon: Bell },
   { label: 'AI Assistant', href: '/ai-assistant', icon: Sparkles },
   { label: 'Plans', href: '/subscriptions', icon: CreditCard },
-  { label: 'Profile', href: '/profile', icon: CircleUserRound },
 ];
 
 function isCurrent(pathname: string, href: string) {
-  return pathname === href || (href !== '/dashboard' && pathname.startsWith(`${href}/`));
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function Badge({ count }: { count: number }) {
+  if (!count) return null;
+  return (
+    <span aria-label={`${count} unread`} className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-none text-white">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
 }
 
 export default function AppNavbar() {
   const pathname = usePathname();
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [messageNotice, setMessageNotice] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [profile, setProfile] = useState<ProfileSummary | null>(null);
 
-  const refreshUnreadCount = useCallback(async () => {
+  const refreshCounts = useCallback(async () => {
     try {
-      const response = await fetch('/api/messages/unread', { cache: 'no-store' });
-      if (!response.ok) return;
-      const data = (await response.json()) as { unreadCount: number };
-      setUnreadCount(data.unreadCount);
+      const [messagesResponse, notificationsResponse] = await Promise.all([
+        fetch('/api/messages/unread', { cache: 'no-store' }),
+        fetch('/api/notifications?unread=true', { cache: 'no-store' }),
+      ]);
+
+      if (messagesResponse.ok) {
+        const data = await messagesResponse.json() as { unreadCount: number };
+        setUnreadMessages(data.unreadCount);
+      }
+      if (notificationsResponse.ok) {
+        const data = await notificationsResponse.json() as { unreadCount: number };
+        setUnreadNotifications(data.unreadCount);
+      }
     } catch (error) {
-      console.error('Could not refresh unread message badge:', error);
+      console.error('Could not refresh sidebar notification badges:', error);
     }
   }, []);
 
@@ -66,138 +97,113 @@ export default function AppNavbar() {
     let active = true;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    void supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!active || !user) return;
-      const { data: profile, error: profileError } = await supabase.from('profiles')
-        .select('role').eq('id', user.id).maybeSingle();
-      if (!active) return;
-      if (profileError) console.error('Could not load account role for navigation:', profileError.message);
-      setIsAdmin(profile?.role === 'admin' || profile?.role === 'moderator');
-
-      // Clean up previous channel if one exists
-      if (channel) {
-        void supabase.removeChannel(channel);
+    void supabase.auth.getUser().then(async ({ data: { user }, error }) => {
+      if (error) {
+        console.error('Could not load the signed-in account for navigation:', error.message);
+        return;
       }
+      if (!user || !active) return;
+
+      const { data, error: profileError } = await supabase
+        .from('profiles')
+        .select('username, full_name, avatar_url, role')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profileError) console.error('Could not load the profile for navigation:', profileError.message);
+      if (active && data) setProfile(data as ProfileSummary);
 
       channel = supabase
-        .channel(`inbox-notifications:${user.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-          },
-          (payload) => {
-            const message = payload.new as { sender_id?: string };
-            if (message.sender_id === user.id) return;
-            let shouldNotify = true;
-            const savedPreferences = window.localStorage.getItem('skoollhub-notifications');
-            if (savedPreferences) {
-              try {
-                const preferences = JSON.parse(savedPreferences) as { newMessages?: boolean };
-                shouldNotify = preferences.newMessages !== false;
-              } catch {
-                window.localStorage.removeItem('skoollhub-notifications');
-              }
-            }
-            if (shouldNotify) {
-              setMessageNotice(true);
-              window.setTimeout(() => setMessageNotice(false), 5000);
-            }
-            void refreshUnreadCount();
-          }
-        )
+        .channel(`skoollhub-sidebar:${user.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+          const message = payload.new as { sender_id?: string };
+          if (message.sender_id !== user.id) void refreshCounts();
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
+          void refreshCounts();
+        })
         .subscribe((status) => {
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.error('Live inbox notifications are unavailable.');
+            console.error('Live sidebar notifications are unavailable.');
           }
         });
 
-      void refreshUnreadCount();
+      void refreshCounts();
     });
 
-    const poll = window.setInterval(() => void refreshUnreadCount(), 30_000);
-
+    const poll = window.setInterval(() => void refreshCounts(), 30_000);
     return () => {
       active = false;
       window.clearInterval(poll);
-      if (channel) {
-        void supabase.removeChannel(channel);
-      }
+      if (channel) void supabase.removeChannel(channel);
     };
-  }, [refreshUnreadCount]);
+  }, [refreshCounts]);
 
-  const messageBadge = unreadCount > 0 ? (
-    <span aria-hidden="true" className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-none text-white">
-      {unreadCount > 99 ? '99+' : unreadCount}
-    </span>
-  ) : null;
-  const navigationItems = isAdmin
+  const navigationItems = profile?.role === 'admin' || profile?.role === 'moderator'
     ? [...items, { label: 'Admin', href: '/admin', icon: ShieldCheck }]
     : items;
-  const visibleMobileItems = navigationItems.filter((item) =>
-    ['/feed', '/houses', '/timetable', '/messages', '/profile', '/ai-assistant', '/subscriptions', '/admin'].includes(item.href)
-  );
+
+  const linkClass = (href: string) => {
+    const active = isCurrent(pathname, href);
+    return `flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold transition ${
+      active
+        ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white'
+    }`;
+  };
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/95">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6">
-          <Link href="/dashboard" className="flex shrink-0 items-center gap-2.5">
-            <Image src="/icons/skoollhub-192.png" alt="" width={36} height={36} className="rounded-xl shadow-sm" />
-            <span className="hidden text-base font-extrabold tracking-tight text-slate-900 dark:text-white sm:inline">
-              SkoollHub
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-200 bg-white px-4 py-5 dark:border-zinc-800 dark:bg-zinc-950 md:flex">
+        <Link href="/feed" className="mb-7 flex items-center gap-3 px-2">
+          <Image src="/icons/skoollhub-192.png" alt="SkoollHub" width={42} height={42} className="rounded-xl shadow-sm" />
+          <span className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">SkoollHub</span>
+        </Link>
+
+        <nav aria-label="Main navigation" className="flex-1 space-y-1 overflow-y-auto">
+          {navigationItems.map(({ label, href, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              aria-current={isCurrent(pathname, href) ? 'page' : undefined}
+              onClick={(event) => {
+                if (href === '/feed' && pathname === '/feed') {
+                  event.preventDefault();
+                  window.location.reload();
+                }
+              }}
+              className={linkClass(href)}
+            >
+              <Icon size={20} strokeWidth={isCurrent(pathname, href) ? 2.4 : 1.9} />
+              <span>{label}</span>
+              {href === '/messages' && <Badge count={unreadMessages} />}
+              {href === '/notifications' && <Badge count={unreadNotifications} />}
+            </Link>
+          ))}
+          <Link href="/profile" aria-current={isCurrent(pathname, '/profile') ? 'page' : undefined} className={linkClass('/profile')}>
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-100 text-sm dark:bg-indigo-950">
+              {profile?.avatar_url
+                ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                : <span aria-hidden="true">🧑‍🎓</span>}
             </span>
+            <span>Profile</span>
           </Link>
+        </nav>
 
-          <nav aria-label="Main navigation" className="hidden min-w-0 flex-1 items-center justify-center gap-1 xl:flex">
-            {navigationItems.map(({ label, href, icon: Icon }) => {
-              const active = isCurrent(pathname, href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  aria-current={active ? 'page' : undefined}
-                  onClick={(event) => {
-                    if (href === '/feed' && pathname === '/feed') {
-                      event.preventDefault();
-                      window.location.reload();
-                    }
-                  }}
-                  className={`inline-flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-xs font-semibold transition ${active ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-white'}`}
-                >
-                  <Icon size={16} strokeWidth={active ? 2.4 : 1.9} />
-                  {label}
-                  {href === '/messages' && messageBadge}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="flex shrink-0 items-center gap-1.5">
+        <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 dark:border-zinc-800">
+          <div className="flex items-center gap-3 px-2">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-100 text-xl dark:bg-indigo-950">
+              {profile?.avatar_url
+                ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                : <span aria-hidden="true">🧑‍🎓</span>}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Student'}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-zinc-400">{profile?.username ? `@${profile.username}` : 'Your account'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 px-1">
             <InstallAppButton />
-            <Link
-              href="/feed"
-              className="hidden items-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2.5 text-xs font-semibold text-white transition hover:bg-indigo-700 sm:inline-flex"
-            >
-              <span className="text-sm leading-none">+</span>
-              Create post
-            </Link>
-            <Link
-              href="/profile"
-              aria-label="My profile"
-              aria-current={isCurrent(pathname, '/profile') ? 'page' : undefined}
-              className={`hidden h-10 w-10 items-center justify-center rounded-xl transition sm:flex ${isCurrent(pathname, '/profile') ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-white'}`}
-            >
-              <CircleUserRound size={18} />
-            </Link>
-            <Link
-              href="/settings"
-              aria-label="Settings"
-              aria-current={isCurrent(pathname, '/settings') ? 'page' : undefined}
-              className={`flex h-10 w-10 items-center justify-center rounded-xl transition ${isCurrent(pathname, '/settings') ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-white'}`}
-            >
+            <Link href="/settings" aria-label="Settings" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
               <Settings size={18} />
             </Link>
             <button
@@ -207,82 +213,46 @@ export default function AppNavbar() {
                 const isDark = document.documentElement.classList.toggle('dark');
                 window.localStorage.setItem('skoollhub-theme', isDark ? 'dark' : 'light');
               }}
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-white"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <Sun size={18} className="hidden dark:block" />
               <Moon size={18} className="dark:hidden" />
             </button>
           </div>
         </div>
-
-        <nav aria-label="Main navigation" className="hidden overflow-x-auto border-t border-slate-100 px-3 py-2 dark:border-zinc-800 md:flex xl:hidden">
-          <div className="mx-auto flex min-w-max items-center gap-1">
-            {navigationItems.map(({ label, href, icon: Icon }) => {
-              const active = isCurrent(pathname, href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  aria-current={active ? 'page' : undefined}
-                  onClick={(event) => {
-                    if (href === '/feed' && pathname === '/feed') {
-                      event.preventDefault();
-                      window.location.reload();
-                    }
-                  }}
-                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${active ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-900'}`}
-                >
-                  <Icon size={15} />
-                  {label}
-                  {href === '/messages' && messageBadge}
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
-      </header>
+      </aside>
 
       <nav
         aria-label="Mobile navigation"
-        className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-50 grid ${isAdmin ? 'grid-cols-8' : 'grid-cols-7'} rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 md:hidden`}
+        className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-50 grid grid-cols-5 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 md:hidden"
       >
-        {visibleMobileItems.map(({ label, href, icon: Icon }) => {
-          const active = isCurrent(pathname, href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              aria-current={active ? 'page' : undefined}
-              onClick={(event) => {
-                if (href === '/feed' && pathname === '/feed') {
-                  event.preventDefault();
-                  window.location.reload();
-                }
-              }}
-              className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[10px] font-semibold transition ${active ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 dark:text-zinc-400'}`}
-            >
-              <span className="relative">
-                <Icon size={18} strokeWidth={active ? 2.4 : 1.9} />
-                {href === '/messages' && unreadCount > 0 && <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">{unreadCount > 99 ? '99+' : unreadCount}</span>}
-              </span>
-              <span className="max-w-full truncate">{label === 'AI Assistant' ? 'AI' : label}</span>
-            </Link>
-          );
-        })}
+        {[
+          items[0],
+          items[1],
+          items[4],
+          items[5],
+          { label: 'Profile', href: '/profile', icon: CircleUserRound },
+        ].map(({ label, href, icon: Icon }) => (
+          <Link
+            key={href}
+            href={href}
+            aria-label={label}
+            aria-current={isCurrent(pathname, href) ? 'page' : undefined}
+            onClick={(event) => {
+              if (href === '/feed' && pathname === '/feed') {
+                event.preventDefault();
+                window.location.reload();
+              }
+            }}
+            className={`relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[10px] font-semibold ${isCurrent(pathname, href) ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'text-slate-500 dark:text-zinc-400'}`}
+          >
+            <Icon size={19} />
+            <span className="max-w-full truncate">{label}</span>
+            {href === '/messages' && unreadMessages > 0 && <span aria-label={`${unreadMessages} unread messages`} className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">{unreadMessages > 99 ? '99+' : unreadMessages}</span>}
+            {href === '/notifications' && unreadNotifications > 0 && <span aria-label={`${unreadNotifications} unread notifications`} className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">{unreadNotifications > 99 ? '99+' : unreadNotifications}</span>}
+          </Link>
+        ))}
       </nav>
-
-      {messageNotice && pathname !== '/messages' && (
-        <Link
-          href="/messages"
-          role="status"
-          onClick={() => setMessageNotice(false)}
-          className="fixed right-4 top-20 z-[60] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-xl dark:border-indigo-900 dark:bg-zinc-900 dark:text-white"
-        >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"><MessageCircle size={17} /></span>
-          <span>New message received <span className="block text-xs font-normal text-slate-500 dark:text-zinc-400">Tap to open your inbox</span></span>
-          <Check size={16} className="ml-2 text-emerald-600" />
-        </Link>
-      )}
     </>
   );
 }

@@ -60,9 +60,17 @@ roommate matching, classes/timetable, and the AI assistant use the SkoollHub
 Supabase project.
 
 The feed supports posts, likes, comments, bookmarks, image/video uploads, and
-optional location sharing. Comment authors link to their public profiles.
+optional location sharing. Image and video posts also appear as tappable
+stories, and sharing uses the phone/system share sheet where supported.
+Bookmarks are saved to the signed-in student's account. Notifications include
+likes, comments, and @mentions on posts and can be opened from the side
+navigation. Comment authors link to their public profiles.
 Profiles show a post grid, follower/following counts, and follow/message
 actions. Feed suggestions let students discover and follow other students.
+
+The authenticated app uses a fixed desktop sidebar. Existing Supabase browser
+sessions are sent directly to the feed when opening the home or sign-in page;
+the session is not replaced with a password stored in the browser.
 
 Direct chats persist text and file messages in Supabase and use Supabase
 Realtime for incoming messages. Chats also support recorded voice notes and
@@ -74,6 +82,9 @@ Apply all migrations in `supabase/migrations`, including
 `20261012200000_call_signal_retention.sql`, before using follows, signup
 metadata, unread-message updates, location-aware discovery, or calls in
 production.
+Apply `20261106103000_social_notifications.sql` as well; it adds notification
+metadata and the row-level security policies used for feed likes, comments,
+mentions, and unread notification badges.
 
 Registration collects country, phone, school, course/department, username,
 and academic level. The school and course directories are curated starter

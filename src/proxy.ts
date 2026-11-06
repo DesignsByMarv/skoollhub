@@ -22,21 +22,33 @@ export async function proxy(request: NextRequest) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
+  const pathname = request.nextUrl.pathname;
+  const redirectWithSession = (url: URL) => {
+    const redirectResponse = NextResponse.redirect(url);
+    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return redirectResponse;
+  };
 
-  const isProtectedPath = request.nextUrl.pathname.startsWith('/dashboard') ||
-                          request.nextUrl.pathname.startsWith('/feed') ||
-                          request.nextUrl.pathname.startsWith('/messages') ||
-                          request.nextUrl.pathname.startsWith('/ai-assistant') ||
-                          request.nextUrl.pathname.startsWith('/houses') ||
-                          request.nextUrl.pathname.startsWith('/roommates') ||
-                          request.nextUrl.pathname.startsWith('/timetable') ||
-                          request.nextUrl.pathname.startsWith('/settings') ||
-                          request.nextUrl.pathname.startsWith('/profile');
+  if (user?.email_confirmed_at && (pathname === '/' || pathname === '/login')) {
+    return redirectWithSession(new URL('/feed', request.url));
+  }
+
+  const isProtectedPath = pathname.startsWith('/dashboard') ||
+                          pathname.startsWith('/feed') ||
+                          pathname.startsWith('/messages') ||
+                          pathname.startsWith('/notifications') ||
+                          pathname.startsWith('/subscriptions') ||
+                          pathname.startsWith('/ai-assistant') ||
+                          pathname.startsWith('/houses') ||
+                          pathname.startsWith('/roommates') ||
+                          pathname.startsWith('/timetable') ||
+                          pathname.startsWith('/settings') ||
+                          pathname.startsWith('/profile');
 
   // Block access if user is not logged in OR email is not confirmed
   if (isProtectedPath) {
     if (!user || !user.email_confirmed_at) {
-      return NextResponse.redirect(new URL('/login?error=unverified', request.url));
+      return redirectWithSession(new URL('/login?error=unverified', request.url));
     }
   }
 

@@ -43,6 +43,28 @@ async function loadProfiles(
   return new Map((data ?? []).map((profile) => [profile.id, profile as Profile]));
 }
 
+type NewNotification = {
+  user_id: string;
+  actor_id: string;
+  post_id: string;
+  comment_id?: string;
+  title: string;
+  body: string;
+  type: 'like' | 'comment' | 'mention';
+};
+
+async function createNotifications(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  notifications: NewNotification[]
+) {
+  if (!notifications.length) return;
+  const { error } = await supabase.from('notifications').insert(notifications);
+  if (error) {
+    console.error('Social notification insert failed:', error.message);
+    throw new Error('Your feed action succeeded, but its notification could not be saved. Apply the latest Supabase migration and try again.');
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const { supabase, user } = await getSignedInUser();
@@ -217,7 +239,7 @@ export async function POST(request: Request) {
         return errorResponse('Location coordinates are out of range.', 400);
       }
 
-      const { error } = await supabase.from('posts').insert({
+      const { data: createdPost, error } = await supabase.from('posts').insert({
         author_id: user.id,
         content,
         category,
@@ -225,10 +247,35 @@ export async function POST(request: Request) {
         media_type: mediaType,
         location_lat: validLatitude,
         location_lng: validLongitude,
-      });
+      }).select('id').single();
       if (error) {
         console.error('Feed post creation failed:', error.message);
         return errorResponse('Could not publish your post. Please try again.', 500);
+      }
+      const usernames = [...new Set([...content.matchAll(/@([a-z0-9_]{3,24})/gi)].map((match) => match[1].toLowerCase()))];
+      if (usernames.length) {
+        const { data: mentionedProfiles, error: mentionLookupError } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .in('username', usernames);
+        if (mentionLookupError) {
+          console.error('Post mention lookup failed:', mentionLookupError.message);
+          return errorResponse('Your post was published, but mentions could not be resolved.', 500);
+        }
+        try {
+          await createNotifications(supabase, (mentionedProfiles ?? [])
+            .filter((profile) => profile.id !== user.id)
+            .map((profile) => ({
+              user_id: profile.id,
+              actor_id: user.id,
+              post_id: createdPost.id,
+              title: 'You were mentioned',
+              body: 'Someone mentioned you in a post.',
+              type: 'mention' as const,
+            })));
+        } catch (notificationError) {
+          return errorResponse(notificationError instanceof Error ? notificationError.message : 'Could not save post mention notifications.', 500);
+        }
       }
       return NextResponse.json({ success: true }, { status: 201 });
     }
@@ -238,6 +285,27 @@ export async function POST(request: Request) {
 
     if (payload.action === 'like') {
       if (typeof payload.isLiked !== 'boolean') return errorResponse('A like state is required.', 400);
+      const { data: post, error: postError } = await supabase
+        .from('posts')
+        .select('author_id')
+        .eq('id', postId)
+        .maybeSingle();
+      if (postError) {
+        console.error('Feed like post lookup failed:', postError.message);
+        return errorResponse('Could not update your like. Please try again.', 500);
+      }
+      if (!post) return errorResponse('This post is no longer available.', 404);
+
+      const { data: priorLike, error: priorLikeError } = await supabase
+        .from('post_likes')
+        .select('post_id')
+        .eq('post_id', postId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (priorLikeError) {
+        console.error('Feed like state query failed:', priorLikeError.message);
+        return errorResponse('Could not update your like. Please try again.', 500);
+      }
       const result = payload.isLiked
         ? await supabase.from('post_likes').upsert(
             { post_id: postId, user_id: user.id },
@@ -247,6 +315,20 @@ export async function POST(request: Request) {
       if (result.error) {
         console.error('Feed like update failed:', result.error.message);
         return errorResponse('Could not update your like. Please try again.', 500);
+      }
+      if (payload.isLiked && !priorLike && post.author_id !== user.id) {
+        try {
+          await createNotifications(supabase, [{
+            user_id: post.author_id,
+            actor_id: user.id,
+            post_id: postId,
+            title: 'New like',
+            body: 'Someone liked your post.',
+            type: 'like',
+          }]);
+        } catch (notificationError) {
+          return errorResponse(notificationError instanceof Error ? notificationError.message : 'Could not save the like notification.', 500);
+        }
       }
       return NextResponse.json({ success: true });
     }
@@ -273,14 +355,63 @@ export async function POST(request: Request) {
       const content = typeof payload.content === 'string' ? payload.content.trim() : '';
       if (!content) return errorResponse('Write a comment before posting it.', 400);
       if (content.length > 1000) return errorResponse('Comments must be 1,000 characters or fewer.', 400);
-      const { error } = await supabase.from('post_comments').insert({
+      const { data: post, error: postError } = await supabase
+        .from('posts')
+        .select('author_id')
+        .eq('id', postId)
+        .maybeSingle();
+      if (postError) {
+        console.error('Feed comment post lookup failed:', postError.message);
+        return errorResponse('Could not publish your comment. Please try again.', 500);
+      }
+      if (!post) return errorResponse('This post is no longer available.', 404);
+
+      const { data: comment, error } = await supabase.from('post_comments').insert({
         post_id: postId,
         author_id: user.id,
         content,
-      });
+      }).select('id').single();
       if (error) {
         console.error('Feed comment creation failed:', error.message);
         return errorResponse('Could not publish your comment. Please try again.', 500);
+      }
+      const usernames = [...new Set([...content.matchAll(/@([a-z0-9_]{3,24})/gi)].map((match) => match[1].toLowerCase()))];
+      const { data: mentionedProfiles, error: mentionLookupError } = usernames.length
+        ? await supabase.from('profiles').select('id, username').in('username', usernames)
+        : { data: [], error: null };
+      if (mentionLookupError) {
+        console.error('Comment mention lookup failed:', mentionLookupError.message);
+        return errorResponse('Your comment was posted, but mentions could not be resolved.', 500);
+      }
+
+      const notificationByUser = new Map<string, NewNotification>();
+      if (post.author_id !== user.id) {
+        notificationByUser.set(post.author_id, {
+          user_id: post.author_id,
+          actor_id: user.id,
+          post_id: postId,
+          comment_id: comment.id,
+          title: 'New comment',
+          body: content.slice(0, 160),
+          type: 'comment',
+        });
+      }
+      for (const mentionedProfile of mentionedProfiles ?? []) {
+        if (mentionedProfile.id === user.id) continue;
+        notificationByUser.set(mentionedProfile.id, {
+          user_id: mentionedProfile.id,
+          actor_id: user.id,
+          post_id: postId,
+          comment_id: comment.id,
+          title: 'You were mentioned',
+          body: `Someone mentioned @${mentionedProfile.username} in a comment.`,
+          type: 'mention',
+        });
+      }
+      try {
+        await createNotifications(supabase, [...notificationByUser.values()]);
+      } catch (notificationError) {
+        return errorResponse(notificationError instanceof Error ? notificationError.message : 'Could not save comment notifications.', 500);
       }
       return NextResponse.json({ success: true }, { status: 201 });
     }

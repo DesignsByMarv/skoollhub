@@ -1,66 +1,57 @@
-import Link from 'next/link';
+import LandingHeader from '@/components/landing/LandingHeader';
+import HeroSection from '@/components/landing/HeroSection';
+import CampusMarquee from '@/components/landing/CampusMarquee';
+import StatsSection from '@/components/landing/StatsSection';
+import InteractiveFeatureCards from '@/components/landing/InteractiveFeatureCards';
+import BentoGridSection from '@/components/landing/BentoGridSection';
+import HowItWorksSection from '@/components/landing/HowItWorksSection';
+import TestimonialsSection from '@/components/landing/TestimonialsSection';
+import FaqSection from '@/components/landing/FaqSection';
+import CtaSection from '@/components/landing/CtaSection';
+import LandingFooter from '@/components/landing/LandingFooter';
 import MotivationalQuote from '@/components/MotivationalQuote';
 
 export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white relative">
-      {/* Navbar */}
-      <header className="px-6 py-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800">
-        <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-          SkoollHub
-        </h1>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/login"
-            className="text-sm font-medium px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/signup"
-            className="text-sm font-medium px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-          >
-            Get Started
-          </Link>
-        </div>
-      </header>
+    <div className="landing-page min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-white relative selection:bg-indigo-500 selection:text-white">
+      {/* Top Fixed Header with Blur */}
+      <LandingHeader />
 
-      {/* Hero Section */}
-      <main className="max-w-4xl mx-auto px-6 py-20 text-center space-y-8">
-        <h2 className="text-4xl md:text-6xl font-extrabold tracking-tight">
-          Your All-In-One <br />
-          <span className="text-blue-600 dark:text-blue-400">
-            Campus Companion
-          </span>
-        </h2>
+      {/* Main Content Sections */}
+      <main className="relative">
+        {/* Hero Section with Floating 3D Cards */}
+        <HeroSection />
 
-        <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-          Find off-campus hostels, match with compatibility-tested roommates, manage your timetable, and connect with students across your university.
-        </p>
+        {/* Live Campus Marquee */}
+        <CampusMarquee />
 
-        <div className="flex items-center justify-center gap-4">
-          <Link
-            href="/signup"
-            className="px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold text-base hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            Get Started Free
-          </Link>
-          <Link
-            href="/login"
-            className="px-6 py-3 rounded-xl bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200 font-semibold text-base hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors"
-          >
-            Sign In
-          </Link>
-        </div>
+        {/* Impact Numbers & Metrics */}
+        <StatsSection />
+
+        {/* Interactive Feature Matrix (Full of Cards & Interactive Tabs) */}
+        <InteractiveFeatureCards />
+
+        {/* Asymmetrical Bento Grid */}
+        <BentoGridSection />
+
+        {/* 4-Step How It Works Card Journey */}
+        <HowItWorksSection />
+
+        {/* Student Testimonials & Love */}
+        <TestimonialsSection />
+
+        {/* Interactive FAQ Accordion */}
+        <FaqSection />
+
+        {/* High Conversion Bottom CTA */}
+        <CtaSection />
       </main>
 
-      {/* Floating Motivational Quote */}
+      {/* Floating Minimize-friendly Motivation Card */}
       <MotivationalQuote />
 
-      {/* Footer */}
-    <footer className="py-6 text-center text-xs text-gray-500 dark:text-gray-400">
-  © 2026 SkoollHub. All rights reserved.
-</footer>
+      {/* Modern Comprehensive Footer */}
+      <LandingFooter />
     </div>
   );
 }

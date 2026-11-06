@@ -6,6 +6,13 @@
   it, and `/dashboard` redirects to `/feed`.
 - Students can create feed posts, like and bookmark posts, comment, and share
   images, videos, and optional location.
+- Image and video posts appear as clickable stories with a full-screen viewer.
+- Notifications show likes, comments, and @mentions on posts, with unread
+  counts in navigation.
+- Desktop navigation stays fixed at the left of the feed; the signed-in name
+  and profile photo/avatar appear below the links.
+- Returning authenticated students opening the home or sign-in page go
+  directly to the feed.
 - Comment authors link to public student profiles.
 - Profiles display a post grid, student details, follower/following totals,
   follow controls, and a message action.
@@ -44,6 +51,10 @@ and discovery preferences, and call signaling. The subsequent
 `20261012200000_call_signal_retention.sql` allows expired call signals to be
 removed; call signaling rows older than 24 hours are cleaned up during call
 requests. Apply migrations in filename order.
+The `20261106103000_social_notifications.sql` migration adds notification
+metadata and protected read/write policies for feed likes, comments, and
+mentions. Apply it before relying on social notifications or their unread
+badge.
 
 The existing `media` Storage bucket must be configured for authenticated
 uploads. Message attachments and voice notes are stored there and referenced

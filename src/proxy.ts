@@ -2,6 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
 export async function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname === '/') {
+    return NextResponse.next({ request });
+  }
+
   const response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -29,7 +33,7 @@ export async function proxy(request: NextRequest) {
     return redirectResponse;
   };
 
-  if (user?.email_confirmed_at && (pathname === '/' || pathname === '/login')) {
+  if (user?.email_confirmed_at && pathname === '/login') {
     return redirectWithSession(new URL('/feed', request.url));
   }
 

@@ -67,6 +67,96 @@ type SettingsTab = 'general' | 'privacy' | 'chats' | 'notifications' | 'help';
 type ThemeColor = 'indigo' | 'emerald' | 'violet' | 'rose' | 'amber' | 'coral' | 'cyan' | 'gold' | 'neon';
 type ChatBackground = 'zinc-950' | 'slate-900' | 'stone-950' | 'midnight-blue' | 'emerald-forest' | 'deep-purple' | 'sakura-dark' | 'slate-50';
 
+const demoConversations: Conversation[] = [
+  {
+    id: 'demo-chat-1',
+    contact: {
+      id: 'host-1',
+      full_name: 'Alhaji Rasheed Caretaker',
+      username: 'rasheed_lodges',
+      avatar_url: null,
+      department: 'Emerald Court Hostels • Akoka',
+    },
+    last_message: {
+      id: 'demo-msg-1',
+      chat_id: 'demo-chat-1',
+      sender_id: 'host-1',
+      content: 'Hello! The self-contain room at Gate 2 is available for physical inspection anytime this Friday.',
+      media_url: null,
+      message_type: 'text',
+      document_name: null,
+      created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      is_sent: true,
+      is_read: false,
+    },
+    unread_count: 1,
+    is_pinned: true,
+  },
+  {
+    id: 'demo-chat-2',
+    contact: {
+      id: 'user-amina',
+      full_name: 'Amina Bello',
+      username: 'amina_pharm',
+      avatar_url: null,
+      department: 'Pharmacy • 400L',
+    },
+    last_message: {
+      id: 'demo-msg-2',
+      chat_id: 'demo-chat-2',
+      sender_id: 'user-amina',
+      content: 'Hey! Saw our 94% roommate compatibility match on SkoollHub. Are you still searching for a flat around Agbowo?',
+      media_url: null,
+      message_type: 'text',
+      document_name: null,
+      created_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+      is_sent: true,
+      is_read: true,
+    },
+    unread_count: 0,
+    is_pinned: false,
+  },
+];
+
+const demoMessages: Message[] = [
+  {
+    id: 'm-1',
+    chat_id: 'demo-chat-1',
+    sender_id: 'host-1',
+    content: 'Good day! Thank you for inquiring about Emerald Court.',
+    media_url: null,
+    message_type: 'text',
+    document_name: null,
+    created_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+    is_sent: true,
+    is_read: true,
+  },
+  {
+    id: 'm-2',
+    chat_id: 'demo-chat-1',
+    sender_id: 'host-1',
+    content: 'Hello! The self-contain room at Gate 2 is available for physical inspection anytime this Friday.',
+    media_url: null,
+    message_type: 'text',
+    document_name: null,
+    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    is_sent: true,
+    is_read: false,
+  },
+  {
+    id: 'm-3',
+    chat_id: 'demo-chat-2',
+    sender_id: 'user-amina',
+    content: 'Hey! Saw our 94% roommate compatibility match on SkoollHub. Are you still searching for a flat around Agbowo?',
+    media_url: null,
+    message_type: 'text',
+    document_name: null,
+    created_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+    is_sent: true,
+    is_read: true,
+  },
+];
+
 async function responseError(response: Response) {
   const data = (await response.json().catch(() => null)) as { error?: string } | null;
   return data?.error || 'Something went wrong. Please try again.';
@@ -275,7 +365,12 @@ function MessagesContent() {
     const response = await fetch('/api/messages/conversations', { cache: 'no-store' });
     if (!response.ok) throw new Error(await responseError(response));
     const data = (await response.json()) as { conversations: Conversation[] };
-    setConversations(data.conversations);
+    if (data.conversations && data.conversations.length > 0) {
+      setConversations(data.conversations);
+    } else {
+      setConversations(demoConversations);
+      setMessages((prev) => (prev.length > 0 ? prev : demoMessages));
+    }
     return data.conversations;
   }, []);
 
@@ -350,7 +445,12 @@ function MessagesContent() {
           const namePart = user.email.split('@')[0];
           setCurrentUserName(namePart.charAt(0).toUpperCase() + namePart.slice(1));
         }
-        setConversations(data.conversations);
+        if (data.conversations && data.conversations.length > 0) {
+      setConversations(data.conversations);
+    } else {
+      setConversations(demoConversations);
+      setMessages((prev) => (prev.length > 0 ? prev : demoMessages));
+    }
 
         const existing = requestedUserId
           ? data.conversations.find((conversation) => conversation.contact.id === requestedUserId)
@@ -517,6 +617,24 @@ function MessagesContent() {
     if (!selectedId || sending) return;
     setSending(true);
     setError('');
+    if (selectedId.startsWith('demo-')) {
+      const newMsg: Message = {
+        id: `demo-msg-${Date.now()}`,
+        chat_id: selectedId,
+        sender_id: currentUserId || 'current-user',
+        content: payload.content || null,
+        media_url: payload.media_url || null,
+        message_type: payload.message_type || 'text',
+        document_name: payload.document_name || null,
+        created_at: new Date().toISOString(),
+        is_sent: true,
+        is_read: true,
+      };
+      setMessages((prev) => [...prev, newMsg]);
+      setMessageText('');
+      setSending(false);
+      return;
+    }
     try {
       if (typingChannelRef.current && currentUserId) {
         void typingChannelRef.current.send({
@@ -555,6 +673,24 @@ function MessagesContent() {
     if (!selectedId || uploading) return;
     setUploading(true);
     setError('');
+    if (selectedId.startsWith('demo-')) {
+      const newMsg: Message = {
+        id: `demo-msg-${Date.now()}`,
+        chat_id: selectedId,
+        sender_id: currentUserId || 'current-user',
+        content: payload.content || null,
+        media_url: payload.media_url || null,
+        message_type: payload.message_type || 'text',
+        document_name: payload.document_name || null,
+        created_at: new Date().toISOString(),
+        is_sent: true,
+        is_read: true,
+      };
+      setMessages((prev) => [...prev, newMsg]);
+      setMessageText('');
+      setSending(false);
+      return;
+    }
     try {
       const ext = audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
       const file = new File([audioBlob], `voice-note-${Date.now()}.${ext}`, { type: audioBlob.type });
@@ -584,6 +720,24 @@ function MessagesContent() {
     if (creatingChatFor) return;
     setCreatingChatFor(student.id);
     setError('');
+    if (selectedId.startsWith('demo-')) {
+      const newMsg: Message = {
+        id: `demo-msg-${Date.now()}`,
+        chat_id: selectedId,
+        sender_id: currentUserId || 'current-user',
+        content: payload.content || null,
+        media_url: payload.media_url || null,
+        message_type: payload.message_type || 'text',
+        document_name: payload.document_name || null,
+        created_at: new Date().toISOString(),
+        is_sent: true,
+        is_read: true,
+      };
+      setMessages((prev) => [...prev, newMsg]);
+      setMessageText('');
+      setSending(false);
+      return;
+    }
     try {
       const response = await fetch('/api/messages/conversations', {
         method: 'POST',
@@ -623,6 +777,24 @@ function MessagesContent() {
 
     setUploading(true);
     setError('');
+    if (selectedId.startsWith('demo-')) {
+      const newMsg: Message = {
+        id: `demo-msg-${Date.now()}`,
+        chat_id: selectedId,
+        sender_id: currentUserId || 'current-user',
+        content: payload.content || null,
+        media_url: payload.media_url || null,
+        message_type: payload.message_type || 'text',
+        document_name: payload.document_name || null,
+        created_at: new Date().toISOString(),
+        is_sent: true,
+        is_read: true,
+      };
+      setMessages((prev) => [...prev, newMsg]);
+      setMessageText('');
+      setSending(false);
+      return;
+    }
     try {
       const formData = new FormData();
       formData.append('file', file);

@@ -22,6 +22,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { starterFeedPosts } from '@/lib/starterFeed';
 
 type Category = 'Academic' | 'Housing' | 'Events' | 'Marketplace';
 type Comment = { id: string; authorId: string; author: string; handle: string; text: string; timestamp: string };
@@ -100,7 +101,11 @@ export default function CampusFeed() {
       const response = await fetch(`/api/feed?category=${encodeURIComponent(category)}`);
       if (!response.ok) throw new Error(await getError(response));
       const data = await response.json() as { posts: Post[] };
-      setPosts(data.posts);
+      if (data.posts && data.posts.length > 0) {
+        setPosts(data.posts);
+      } else {
+        setPosts(category === 'All' ? starterFeedPosts : starterFeedPosts.filter((post) => post.category === category));
+      }
       setError('');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load the campus feed.');
@@ -117,7 +122,11 @@ export default function CampusFeed() {
         if (!response.ok) throw new Error(await getError(response));
         const data = await response.json() as { posts: Post[] };
         if (active) {
-          setPosts(data.posts);
+          if (data.posts && data.posts.length > 0) {
+        setPosts(data.posts);
+      } else {
+        setPosts(activeCategory === 'All' ? starterFeedPosts : starterFeedPosts.filter((p) => p.category === activeCategory));
+      }
           setError('');
         }
       } catch (loadError) {
@@ -131,6 +140,14 @@ export default function CampusFeed() {
       active = false;
     };
   }, [activeCategory]);
+
+  useEffect(() => {
+    if (!window.location.hash) return;
+    const targetId = decodeURIComponent(window.location.hash.slice(1));
+    window.requestAnimationFrame(() => {
+      document.getElementById(targetId)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+  }, [posts]);
 
   const refreshPosts = () => loadPosts(activeCategory);
 

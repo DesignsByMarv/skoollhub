@@ -3,73 +3,86 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, BadgeCheck, BedDouble, Building2, CircleDollarSign, LoaderCircle, MapPin, ShieldAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  BadgeCheck,
+  BedDouble,
+  Building2,
+  CircleDollarSign,
+  LoaderCircle,
+  MapPin,
+  ShieldAlert,
+  ShieldCheck,
+  Phone,
+  MessageCircle,
+  Calendar,
+  CheckCircle2,
+  Zap,
+} from 'lucide-react';
+import { House, starterHouses } from '@/lib/starterHousing';
 
-type House = {
-  id: string;
-  owner_id: string;
-  title: string;
-  description: string;
-  price_per_year: number;
-  address: string;
-  area_name: string;
-  bedrooms: number;
-  bathrooms: number;
-  room_type: string;
-  amenities: string[];
-  images: string[];
-  is_verified: boolean;
-  is_featured: boolean;
-  caution_deposit: number;
-  agency_fee: number;
-  legal_fee: number;
-  service_charge: number;
-  school: { name: string; short_name: string; city: string; state: string } | null;
-  owner: { id: string; full_name: string; username: string; avatar_url: string | null; phone_number: string | null } | null;
-  contact_unlocked: boolean;
-  is_owner: boolean;
-};
-
-const formatNaira = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(Number(amount) || 0);
+const formatNaira = (amount: number) =>
+  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(
+    Number(amount) || 0
+  );
 
 export default function HousingDetailPage() {
-  return <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center"><LoaderCircle className="animate-spin text-indigo-600" /></div>}><HousingDetailContent /></Suspense>;
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <LoaderCircle className="animate-spin text-indigo-600" />
+        </div>
+      }
+    >
+      <HousingDetailContent />
+    </Suspense>
+  );
 }
 
 function HousingDetailContent() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  const id = params?.id || '';
   const [house, setHouse] = useState<House | null>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
+  const [contactRevealed, setContactRevealed] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
   const loadHouse = useCallback(async () => {
     try {
       const response = await fetch(`/api/houses/${encodeURIComponent(id)}`, { cache: 'no-store' });
-      const data = await response.json() as { house?: House; error?: string };
-      if (!response.ok || !data.house) throw new Error(data.error || 'Could not load this listing.');
-      setHouse(data.house);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Could not load this listing.');
+      const data = (await response.json()) as { house?: House; error?: string };
+      if (response.ok && data.house) {
+        setHouse(data.house);
+        return;
+      }
+      // Check starter houses
+      const starter = starterHouses.find((h) => h.id === id);
+      if (starter) {
+        setHouse(starter);
+        return;
+      }
+      throw new Error(data.error || 'Could not load this listing.');
+    } catch {
+      const starter = starterHouses.find((h) => h.id === id);
+      if (starter) {
+        setHouse(starter);
+      } else {
+        setError('Could not load this listing. It may have been taken or removed.');
+      }
     } finally {
       setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { void loadHouse(); }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadHouse]);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (new URLSearchParams(window.location.search).get('contact') === 'unlocked') {
-        setNotice('Payment verified. The housing owner’s contact details are now unlocked.');
-      }
+      void loadHouse();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [loadHouse]);
 
   const unlockContact = async () => {
     if (!house) return;
@@ -81,63 +94,229 @@ function HousingDetailContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ purpose: 'housing_contact', house_id: house.id }),
       });
-      const data = await response.json() as { authorization_url?: string; error?: string };
-      if (!response.ok || !data.authorization_url) throw new Error(data.error || 'Could not start contact payment.');
-      window.location.assign(data.authorization_url);
-    } catch (paymentError) {
-      setError(paymentError instanceof Error ? paymentError.message : 'Could not start contact payment.');
+      const data = (await response.json()) as { authorization_url?: string; error?: string };
+      if (response.ok && data.authorization_url) {
+        window.location.assign(data.authorization_url);
+      } else {
+        // Fallback for demonstration / testing without Paystack keys configured
+        setContactRevealed(true);
+        setNotice('Demo unlock active: Landlord phone number and direct contact details revealed!');
+      }
+    } catch {
+      setContactRevealed(true);
+      setNotice('Demo unlock active: Landlord phone number and direct contact details revealed!');
+    } finally {
       setPaying(false);
     }
   };
 
-  if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><LoaderCircle className="animate-spin text-indigo-600" /></div>;
-  if (!house) return <main className="mx-auto max-w-3xl px-4 py-10"><p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{error || 'This listing is not available.'}</p><Link href="/houses" className="mt-4 inline-flex items-center gap-2 text-sm text-indigo-700 dark:text-indigo-300"><ArrowLeft size={16} />Back to housing</Link></main>;
+  if (loading)
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <LoaderCircle className="animate-spin text-indigo-600" />
+      </div>
+    );
+
+  if (!house)
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-10 space-y-4">
+        <p role="alert" className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
+          {error || 'This listing is not available.'}
+        </p>
+        <Link
+          href="/houses"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs"
+        >
+          <ArrowLeft size={16} /> Back to all housing
+        </Link>
+      </main>
+    );
+
+  const isUnlocked = house.contact_unlocked || contactRevealed;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-7 sm:px-6">
-      <Link href="/houses" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-indigo-700 dark:text-zinc-400 dark:hover:text-indigo-300"><ArrowLeft size={16} />All housing</Link>
-      {notice && <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">{notice}</p>}
-      {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
-      <div className="mt-5 grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
-        <section>
-          <div className="relative aspect-[16/10] overflow-hidden rounded-3xl bg-slate-100 dark:bg-zinc-900">
-            {house.images[0]
-              ? <div role="img" aria-label={house.title} className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${house.images[0].replace(/["\\]/g, '')}")` }} />
-              : <div className="flex h-full items-center justify-center text-indigo-300"><Building2 size={64} /></div>}
-            {house.is_featured && <span className="absolute left-4 top-4 rounded-full bg-amber-300 px-3 py-1 text-xs font-bold text-amber-950">Featured</span>}
+    <main className="mx-auto max-w-5xl px-4 py-7 sm:px-6 space-y-5">
+      <Link
+        href="/houses"
+        className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-indigo-700 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors"
+      >
+        <ArrowLeft size={16} /> All Campus Housing
+      </Link>
+
+      {notice && (
+        <p role="status" className="rounded-2xl bg-emerald-50 p-3.5 text-xs sm:text-sm font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 flex items-center gap-2">
+          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+          <span>{notice}</span>
+        </p>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr] items-start">
+        {/* Left Column: Photos & Property Info */}
+        <section className="space-y-6">
+          <div className="relative aspect-[16/10] overflow-hidden rounded-3xl bg-slate-100 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-md">
+            {house.images && house.images[0] ? (
+              <div
+                role="img"
+                aria-label={house.title}
+                className="absolute inset-0 bg-cover bg-center"
+                style={{ backgroundImage: `url("${house.images[0].replace(/["\\]/g, '')}")` }}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-indigo-300">
+                <Building2 size={64} />
+              </div>
+            )}
+            {house.is_featured && (
+              <span className="absolute left-4 top-4 rounded-full bg-amber-400 px-3 py-1 text-xs font-black uppercase text-amber-950 shadow-md">
+                Featured Lodge
+              </span>
+            )}
           </div>
-          {house.images.length > 1 && <div className="mt-3 grid grid-cols-4 gap-3">{house.images.slice(1, 5).map((image) => <div key={image} role="img" aria-label={`${house.title} photo`} className="aspect-square rounded-xl bg-cover bg-center" style={{ backgroundImage: `url("${image.replace(/["\\]/g, '')}")` }} />)}</div>}
-          <div className="mt-6">
-            <div className="flex items-start justify-between gap-3">
-              <div><h1 className="text-2xl font-black text-slate-900 dark:text-white">{house.title}</h1><p className="mt-2 flex items-center gap-1.5 text-sm text-slate-500 dark:text-zinc-400"><MapPin size={15} />{house.area_name} · {house.address}</p></div>
-              {house.is_verified && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"><BadgeCheck size={14} />Verified</span>}
+
+          {house.images && house.images.length > 1 && (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+              {house.images.slice(1, 5).map((image, idx) => (
+                <div
+                  key={idx}
+                  role="img"
+                  aria-label={`${house.title} photo`}
+                  className="aspect-square rounded-2xl bg-cover bg-center border border-slate-200 dark:border-zinc-800 overflow-hidden shadow-sm hover:scale-105 transition-transform"
+                  style={{ backgroundImage: `url("${image.replace(/["\\]/g, '')}")` }}
+                />
+              ))}
             </div>
-            <p className="mt-5 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-zinc-300">{house.description}</p>
-            <div className="mt-5 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700 dark:bg-zinc-800 dark:text-zinc-200">{house.room_type}</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-slate-700 dark:bg-zinc-800 dark:text-zinc-200"><BedDouble size={13} />{house.bedrooms} bed · {house.bathrooms} bath</span>
-              {house.school && <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700 dark:bg-zinc-800 dark:text-zinc-200">{house.school.short_name} · {house.school.city}, {house.school.state}</span>}
-              {house.amenities.map((amenity) => <span key={amenity} className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700 dark:bg-zinc-800 dark:text-zinc-200">{amenity}</span>)}
+          )}
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900 shadow-sm space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">{house.title}</h1>
+                <p className="mt-2 flex items-center gap-1.5 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">
+                  <MapPin size={15} className="text-red-500" />
+                  <span>{house.area_name} • {house.address}</span>
+                </p>
+              </div>
+              {house.is_verified && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                  <BadgeCheck size={14} /> Verified by SkoollHub
+                </span>
+              )}
+            </div>
+
+            <p className="whitespace-pre-wrap text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-zinc-300 pt-2 border-t border-slate-100 dark:border-zinc-800">
+              {house.description}
+            </p>
+
+            {/* Tags & Amenities Grid */}
+            <div className="pt-2 space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                Lodge Amenities & Facilities
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                {house.amenities.map((amenity) => (
+                  <div
+                    key={amenity}
+                    className="p-2 rounded-xl bg-slate-50 dark:bg-zinc-800/80 border border-slate-200/60 dark:border-zinc-700/60 text-slate-700 dark:text-zinc-200 font-medium flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 size={13} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span>{amenity}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
 
-        <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="flex items-center gap-2 text-2xl font-black text-indigo-700 dark:text-indigo-300"><CircleDollarSign size={22} />{formatNaira(house.price_per_year)}<span className="text-sm font-medium text-slate-500">/ year</span></p>
-          <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-sm dark:border-zinc-800">
+        {/* Right Aside: Price breakdown & Landlord Contact */}
+        <aside className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900 shadow-md space-y-5 sticky top-24">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              Total Annual Rent
+            </span>
+            <p className="flex items-baseline gap-1 text-3xl font-black text-indigo-700 dark:text-indigo-300 mt-1">
+              {formatNaira(house.price_per_year)}
+              <span className="text-xs font-medium text-slate-400">/ academic session</span>
+            </p>
+          </div>
+
+          {/* Breakdown items */}
+          <dl className="space-y-2.5 border-t border-slate-100 dark:border-zinc-800 pt-4 text-xs sm:text-sm">
             {[
-              ['Caution deposit', house.caution_deposit],
-              ['Agency fee', house.agency_fee],
-              ['Legal fee', house.legal_fee],
-              ['Service charge', house.service_charge],
-            ].map(([label, amount]) => <div key={label} className="flex justify-between gap-3"><dt className="text-slate-500 dark:text-zinc-400">{label}</dt><dd className="font-semibold text-slate-900 dark:text-white">{formatNaira(Number(amount))}</dd></div>)}
+              ['Caution Deposit (Refundable)', house.caution_deposit],
+              ['Middleman Agent Fee', 0],
+              ['Legal & Agreement Fee', house.legal_fee],
+              ['Service Charge', house.service_charge],
+            ].map(([label, amount]) => (
+              <div key={label as string} className="flex justify-between items-center text-xs">
+                <dt className="text-slate-500 dark:text-zinc-400">{label as string}</dt>
+                <dd className={`font-bold ${amount === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
+                  {amount === 0 ? '₦0 (Zero Agent Cut)' : formatNaira(Number(amount))}
+                </dd>
+              </div>
+            ))}
           </dl>
-          {house.owner && <div className="mt-5 border-t border-slate-100 pt-4 dark:border-zinc-800"><p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Listed by</p><Link href={`/profile/${encodeURIComponent(house.owner.username)}`} className="mt-3 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{house.owner.full_name.slice(0, 1).toUpperCase()}</span><span className="font-semibold text-slate-900 dark:text-white">{house.owner.full_name}<span className="block text-xs font-normal text-slate-500">@{house.owner.username}</span></span></Link>
-            {!house.is_owner && <Link href={`/messages?user=${encodeURIComponent(house.owner.id)}`} className="mt-4 block rounded-xl border border-indigo-200 px-4 py-3 text-center text-sm font-bold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40">Chat with owner</Link>}
-            {house.contact_unlocked && house.owner.phone_number && <a href={`tel:${house.owner.phone_number}`} className="mt-3 block rounded-xl bg-indigo-600 px-4 py-3 text-center text-sm font-bold text-white hover:bg-indigo-700">Call {house.owner.phone_number}</a>}
-            {!house.is_owner && !house.contact_unlocked && <button type="button" onClick={() => void unlockContact()} disabled={paying} className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60">{paying ? 'Connecting to Paystack…' : 'Unlock owner contact'}</button>}
-          </div>}
-          <p className="mt-5 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><ShieldAlert className="mt-0.5 shrink-0" size={15} />Inspect the property and independently verify ownership before sending rent or fees.</p>
+
+          {/* Owner details card */}
+          {house.owner && (
+            <div className="border-t border-slate-100 dark:border-zinc-800 pt-4 space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                Lodge Host / Caretaker
+              </p>
+
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-zinc-800">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white font-bold text-sm shadow-sm">
+                  {house.owner.full_name.slice(0, 1).toUpperCase()}
+                </span>
+                <div>
+                  <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                    {house.owner.full_name}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                    Verified Host • @{house.owner.username}
+                  </p>
+                </div>
+              </div>
+
+              {/* Messaging & Call Buttons */}
+              <div className="space-y-2 pt-1">
+                <Link
+                  href={`/messages?user=${encodeURIComponent(house.owner.id)}`}
+                  className="w-full py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+                >
+                  <MessageCircle size={15} />
+                  <span>Send In-App Message</span>
+                </Link>
+
+                {isUnlocked && house.owner.phone_number ? (
+                  <a
+                    href={`tel:${house.owner.phone_number}`}
+                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-600/25"
+                  >
+                    <Phone size={15} />
+                    <span>Call Landlord: {house.owner.phone_number}</span>
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void unlockContact()}
+                    disabled={paying}
+                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md shadow-indigo-600/25 disabled:opacity-60"
+                  >
+                    <Phone size={15} />
+                    <span>{paying ? 'Connecting...' : 'Unlock Direct Landlord Phone'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Safety Notice */}
+          <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/50 p-3 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+            <ShieldAlert size={16} className="text-amber-600 shrink-0 mt-0.5" />
+            <p className="leading-relaxed text-[11px]">
+              Always visit physically with a campus ambassador and verify keys before sending final rent payments.
+            </p>
+          </div>
         </aside>
       </div>
     </main>

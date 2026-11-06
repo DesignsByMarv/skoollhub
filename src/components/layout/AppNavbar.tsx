@@ -114,6 +114,9 @@ export default function AppNavbar() {
 
       channel = supabase
         .channel(`skoollhub-sidebar:${user.id}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` }, (payload) => {
+          setProfile(payload.new as ProfileSummary);
+        })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
           const message = payload.new as { sender_id?: string };
           if (message.sender_id !== user.id) void refreshCounts();

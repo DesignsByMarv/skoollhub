@@ -11,8 +11,8 @@
   counts in navigation.
 - Desktop navigation stays fixed at the left of the feed; the signed-in name
   and profile photo/avatar appear below the links.
-- Returning authenticated students opening the home or sign-in page go
-  directly to the feed.
+- The site root shows the landing page to both new and returning visitors.
+  Returning authenticated students who open `/login` go directly to the feed.
 - Comment authors link to public student profiles.
 - Profiles display a post grid, student details, follower/following totals,
   follow controls, and a message action.

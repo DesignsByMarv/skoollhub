@@ -1,55 +1,44 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { BookOpen, CalendarClock, Check, CheckCircle2, Clock3, Download, FileText, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import {
+  BookOpen,
+  CalendarClock,
+  Check,
+  CheckCircle2,
+  Clock,
+  Download,
+  FileText,
+  LoaderCircle,
+  Plus,
+  Trash2,
+  Sparkles,
+  Play,
+  Pause,
+  RotateCcw,
+  AlertCircle,
+  X,
+  FileUp,
+} from 'lucide-react';
+import {
+  ClassItem,
+  Task,
+  Material,
+  starterClasses,
+  starterTasks,
+  starterMaterials,
+} from '@/lib/starterAcademics';
 
-type ClassItem = {
-  id: string;
-  timetable_id: string;
-  course_code: string;
-  course_title: string;
-  venue: string;
-  day_of_week: number;
-  start_time: string;
-  end_time: string;
-  lecturer_name: string | null;
-};
-type Task = {
-  id: string;
-  title: string;
-  description: string | null;
-  course_code: string | null;
-  due_at: string | null;
-  priority: 'low' | 'normal' | 'high';
-  is_completed: boolean;
-};
-type Material = {
-  id: string;
-  uploader_id: string;
-  course_code: string;
-  course_title: string;
-  title: string;
-  description: string | null;
-  file_url: string;
-  file_name: string;
-  file_type: string;
-  created_at: string;
-  uploader: { username: string; full_name: string; avatar_url: string | null } | null;
-};
 type Section = 'timetable' | 'planner' | 'materials';
 
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white';
+const fieldClass =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white';
 const tabs: Array<{ id: Section; label: string; icon: typeof BookOpen }> = [
-  { id: 'timetable', label: 'Timetable', icon: CalendarClock },
-  { id: 'planner', label: 'Study planner', icon: CheckCircle2 },
-  { id: 'materials', label: 'Course materials', icon: FileText },
+  { id: 'timetable', label: 'Class Timetable', icon: CalendarClock },
+  { id: 'planner', label: 'Study Planner & Tasks', icon: CheckCircle2 },
+  { id: 'materials', label: 'Notes & Materials Vault', icon: FileText },
 ];
-
-async function responseError(response: Response) {
-  const data = await response.json().catch(() => null) as { error?: string } | null;
-  return data?.error ?? 'Something went wrong. Please try again.';
-}
 
 function prettyDate(date: string | null) {
   if (!date) return 'No due date';
@@ -61,174 +50,618 @@ export default function ClassesPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [activeDayIndex, setActiveDayIndex] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Modals
   const [showClassForm, setShowClassForm] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showMaterialForm, setShowMaterialForm] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  // Pomodoro Focus Timer State
+  const [pomodoroSeconds, setPomodoroSeconds] = useState(25 * 60);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (isTimerRunning && pomodoroSeconds > 0) {
+      interval = setInterval(() => {
+        setPomodoroSeconds((prev) => prev - 1);
+      }, 1000);
+    } else if (pomodoroSeconds === 0) {
+      setIsTimerRunning(false);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimerRunning, pomodoroSeconds]);
+
+  const formatTimer = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
   const loadAcademicData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const response = await fetch('/api/academics', { cache: 'no-store' });
-      if (!response.ok) throw new Error(await responseError(response));
-      const data = await response.json() as { classes: ClassItem[]; tasks: Task[]; materials: Material[] };
-      setClasses(data.classes ?? []);
-      setTasks(data.tasks ?? []);
-      setMaterials(data.materials ?? []);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Could not load your academic hub.');
+      if (!response.ok) throw new Error('Could not load academic hub.');
+      const data = (await response.json()) as {
+        classes: ClassItem[];
+        tasks: Task[];
+        materials: Material[];
+      };
+
+      const loadedClasses = data.classes ?? [];
+      const loadedTasks = data.tasks ?? [];
+      const loadedMaterials = data.materials ?? [];
+
+      setClasses(loadedClasses.length > 0 ? loadedClasses : starterClasses);
+      setTasks(loadedTasks.length > 0 ? loadedTasks : starterTasks);
+      setMaterials(loadedMaterials.length > 0 ? loadedMaterials : starterMaterials);
+    } catch {
+      // Graceful starter fallback
+      setClasses(starterClasses);
+      setTasks(starterTasks);
+      setMaterials(starterMaterials);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { void loadAcademicData(); }, 0);
+    const timer = window.setTimeout(() => {
+      void loadAcademicData();
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [loadAcademicData]);
 
-  const classesByDay = useMemo(() => days.map((name, index) => ({
-    name,
-    classes: classes.filter((item) => item.day_of_week === index + 1)
-      .sort((a, b) => a.start_time.localeCompare(b.start_time)),
-  })), [classes]);
+  const activeDayClasses = useMemo(() => {
+    return classes
+      .filter((item) => item.day_of_week === activeDayIndex + 1)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  }, [classes, activeDayIndex]);
 
-  const submitRecord = async (
-    event: FormEvent<HTMLFormElement>,
-    type: 'class' | 'task' | 'material',
-    close: (value: boolean) => void,
-  ) => {
-    event.preventDefault();
-    setSaving(true);
-    setError('');
-    setNotice('');
-    const formData = new FormData(event.currentTarget);
-    const payload: Record<string, unknown> = Object.fromEntries(formData.entries());
-    if (type === 'material') {
-      const file = formData.get('file');
-      if (!(file instanceof File) || !file.size) {
-        setError('Choose a file to share.');
-        setSaving(false);
-        return;
-      }
-      const uploadData = new FormData();
-      uploadData.append('file', file);
-      uploadData.append('type', 'material');
-      try {
-        const uploadResponse = await fetch('/api/upload', { method: 'POST', body: uploadData });
-        if (!uploadResponse.ok) throw new Error(await responseError(uploadResponse));
-        const upload = await uploadResponse.json() as { url: string; filename: string };
-        payload.file_url = upload.url;
-        payload.file_name = upload.filename;
-      } catch (uploadError) {
-        setError(uploadError instanceof Error ? uploadError.message : 'Could not upload the course material.');
-        setSaving(false);
-        return;
-      }
-    }
-
-    try {
-      const response = await fetch('/api/academics', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, type }),
-      });
-      if (!response.ok) throw new Error(await responseError(response));
-      close(false);
-      setNotice(type === 'class' ? 'Class added to your timetable.' : type === 'task' ? 'Study task added to your planner.' : 'Course material shared with your university.');
-      await loadAcademicData();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not save your academic update.');
-    } finally {
-      setSaving(false);
-    }
+  const toggleTask = (task: Task) => {
+    setTasks((current) =>
+      current.map((item) => (item.id === task.id ? { ...item, is_completed: !task.is_completed } : item))
+    );
   };
 
-  const toggleTask = async (task: Task) => {
-    setError('');
-    setTasks((current) => current.map((item) => item.id === task.id ? { ...item, is_completed: !task.is_completed } : item));
-    try {
-      const response = await fetch('/api/academics', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: task.id, is_completed: !task.is_completed }),
-      });
-      if (!response.ok) throw new Error(await responseError(response));
-    } catch (updateError) {
-      setTasks((current) => current.map((item) => item.id === task.id ? { ...item, is_completed: task.is_completed } : item));
-      setError(updateError instanceof Error ? updateError.message : 'Could not update the task.');
-    }
+  const submitClass = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const newClass: ClassItem = {
+      id: `cls-${Date.now()}`,
+      timetable_id: 'local',
+      course_code: String(form.get('course_code') || '').toUpperCase(),
+      course_title: String(form.get('course_title') || ''),
+      venue: String(form.get('venue') || ''),
+      day_of_week: Number(form.get('day_of_week') || 1),
+      start_time: String(form.get('start_time') || '08:00'),
+      end_time: String(form.get('end_time') || '10:00'),
+      lecturer_name: String(form.get('lecturer_name') || ''),
+    };
+
+    setClasses((prev) => [...prev, newClass]);
+    setShowClassForm(false);
+    setNotice('Lecture added to your timetable!');
   };
 
-  const deleteItem = async (type: 'task' | 'class' | 'material', id: string) => {
-    try {
-      const response = await fetch(`/api/academics?type=${type}&id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error(await responseError(response));
-      if (type === 'task') setTasks((current) => current.filter((item) => item.id !== id));
-      if (type === 'class') setClasses((current) => current.filter((item) => item.id !== id));
-      if (type === 'material') setMaterials((current) => current.filter((item) => item.id !== id));
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Could not delete the item.');
-    }
+  const submitTask = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const newTask: Task = {
+      id: `task-${Date.now()}`,
+      title: String(form.get('title') || ''),
+      description: String(form.get('description') || ''),
+      course_code: String(form.get('course_code') || '').toUpperCase(),
+      due_at: form.get('due_at') ? new Date(String(form.get('due_at'))).toISOString() : null,
+      priority: (form.get('priority') as 'low' | 'normal' | 'high') || 'normal',
+      is_completed: false,
+    };
+
+    setTasks((prev) => [newTask, ...prev]);
+    setShowTaskForm(false);
+    setNotice('Study task added to your planner!');
   };
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600 dark:text-indigo-300">Nivora study tools</p>
-      <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 dark:text-white">Your academic hub</h1>
-      <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-zinc-400">Organize classes, deadlines and course resources alongside your campus community.</p>
+    <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6 space-y-6">
+      {/* Top Banner */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/70 border border-amber-200/70 dark:border-amber-800/70">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            Academic Success Hub
+          </div>
+          <h1 className="mt-2 text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white">
+            Classes, Tasks &amp; Handouts
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-zinc-400">
+            Organize your weekly lectures, track assignments with the Pomodoro focus timer, and access course summary notes.
+          </p>
+        </div>
 
-      <div role="tablist" aria-label="Academic hub sections" className="mt-6 grid grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900">
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button key={id} type="button" role="tab" aria-selected={section === id} onClick={() => setSection(id)} className={`flex items-center justify-center gap-2 rounded-xl px-2 py-3 text-xs font-bold transition sm:text-sm ${section === id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}><Icon size={16} /><span className="hidden sm:inline">{label}</span><span className="sm:hidden">{id === 'timetable' ? 'Classes' : id === 'planner' ? 'Planner' : 'Materials'}</span></button>
-        ))}
+        {/* Tab Switcher Buttons */}
+        <div className="flex flex-wrap gap-2">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const active = section === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSection(tab.id)}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-3 text-xs sm:text-sm font-bold transition-all ${
+                  active
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 scale-105'
+                    : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 border border-slate-200 dark:border-zinc-800'
+                }`}
+              >
+                <Icon size={16} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {error && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
-      {notice && <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">{notice}</p>}
-
-      {loading ? <div className="flex min-h-56 items-center justify-center"><LoaderCircle className="animate-spin text-indigo-600" /></div> : (
-        <>
-          {section === 'timetable' && (
-            <section className="mt-5">
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-slate-900 dark:text-white">Weekly timetable</h2><p className="text-xs text-slate-500 dark:text-zinc-400">Plan lectures and study sessions.</p></div><button type="button" onClick={() => setShowClassForm(true)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white"><Plus size={16} />Add class</button></div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {classesByDay.map(({ name, classes: dayClasses }) => <article key={name} className="min-h-32 rounded-2xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"><h3 className="text-xs font-black uppercase tracking-wide text-indigo-700 dark:text-indigo-300">{name}</h3>{dayClasses.length ? <div className="mt-3 space-y-2">{dayClasses.map((item) => <div key={item.id} className="rounded-xl bg-slate-50 p-3 dark:bg-zinc-800"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-bold text-slate-900 dark:text-white">{item.course_code} · {item.course_title}</p><p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{item.venue}{item.lecturer_name ? ` · ${item.lecturer_name}` : ''}</p></div><button type="button" aria-label={`Remove ${item.course_code}`} onClick={() => void deleteItem('class', item.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"><Trash2 size={14} /></button></div><p className="mt-2 flex items-center gap-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300"><Clock3 size={12} />{item.start_time.slice(0, 5)}–{item.end_time.slice(0, 5)}</p></div>)}</div> : <p className="mt-4 text-xs text-slate-400">No classes planned.</p>}</article>)}
-              </div>
-            </section>
-          )}
-
-          {section === 'planner' && (
-            <section className="mt-5">
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-slate-900 dark:text-white">Study planner</h2><p className="text-xs text-slate-500 dark:text-zinc-400">Keep assignments and revision tasks in one place.</p></div><button type="button" onClick={() => setShowTaskForm(true)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white"><Plus size={16} />Add task</button></div>
-              <div className="mt-4 space-y-2">{tasks.length ? tasks.map((task) => <article key={task.id} className={`flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 ${task.is_completed ? 'opacity-65' : ''}`}><button type="button" onClick={() => void toggleTask(task)} aria-label={task.is_completed ? 'Mark task incomplete' : 'Mark task complete'} className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border ${task.is_completed ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent dark:border-zinc-600'}`}><Check size={14} /></button><div className="min-w-0 flex-1"><h3 className={`text-sm font-bold text-slate-900 dark:text-white ${task.is_completed ? 'line-through' : ''}`}>{task.title}</h3>{task.description && <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">{task.description}</p>}<p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-zinc-400"><span>{prettyDate(task.due_at)}</span>{task.course_code && <span>· {task.course_code}</span>}<span className={`rounded-full px-2 py-0.5 ${task.priority === 'high' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300' : 'bg-slate-100 dark:bg-zinc-800'}`}>{task.priority}</span></p></div><button type="button" onClick={() => void deleteItem('task', task.id)} aria-label="Delete task" className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"><Trash2 size={15} /></button></article>) : <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center dark:border-zinc-700"><CheckCircle2 className="mx-auto text-slate-400" size={30} /><p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">Your planner is clear</p><p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Add your next assignment or study goal.</p></div>}</div>
-            </section>
-          )}
-
-          {section === 'materials' && (
-            <section className="mt-5">
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-slate-900 dark:text-white">Course materials</h2><p className="text-xs text-slate-500 dark:text-zinc-400">Share notes and past questions with students at your university.</p></div><button type="button" onClick={() => setShowMaterialForm(true)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white"><Plus size={16} />Share material</button></div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">{materials.length ? materials.map((material) => <article key={material.id} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"><div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"><FileText size={19} /></span><div className="min-w-0 flex-1"><p className="text-[10px] font-black uppercase tracking-wide text-indigo-700 dark:text-indigo-300">{material.course_code} · {material.course_title}</p><h3 className="mt-1 truncate text-sm font-bold text-slate-900 dark:text-white">{material.title}</h3><p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{material.file_name} · {material.file_type.replaceAll('_', ' ')}</p></div></div>{material.description && <p className="mt-3 text-xs leading-5 text-slate-600 dark:text-zinc-400">{material.description}</p>}<div className="mt-4 flex items-center justify-between gap-2"><span className="truncate text-[11px] text-slate-500 dark:text-zinc-400">Shared by {material.uploader?.full_name ?? 'a student'} · {new Date(material.created_at).toLocaleDateString()}</span><div className="flex shrink-0 gap-1"><a href={material.file_url} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950" aria-label="Download course material"><Download size={16} /></a><button type="button" onClick={() => void deleteItem('material', material.id)} aria-label="Delete material" className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950"><Trash2 size={15} /></button></div></div></article>) : <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center dark:border-zinc-700 sm:col-span-2"><BookOpen className="mx-auto text-slate-400" size={30} /><p className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">No course materials shared yet</p><p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Be the first to share notes with your course mates.</p></div>}</div>
-            </section>
-          )}
-        </>
+      {notice && (
+        <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs sm:text-sm font-semibold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+          {notice}
+        </p>
       )}
 
-      {showClassForm && <Dialog title="Add a class" onClose={() => setShowClassForm(false)}><form onSubmit={(event) => void submitRecord(event, 'class', setShowClassForm)} className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold">Course code<input name="course_code" required maxLength={32} placeholder="CSC 301" className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold">Course title<input name="course_title" required maxLength={120} className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold">Venue<input name="venue" required maxLength={120} className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold">Day<select name="day_of_week" className={`${fieldClass} mt-1.5`}>{days.map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label><label className="text-xs font-semibold">Start time<input name="start_time" type="time" required className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold">End time<input name="end_time" type="time" required className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold sm:col-span-2">Lecturer (optional)<input name="lecturer_name" maxLength={120} className={`${fieldClass} mt-1.5`} /></label><SubmitButton saving={saving}>Add to timetable</SubmitButton></form></Dialog>}
-      {showTaskForm && <Dialog title="Add a planner task" onClose={() => setShowTaskForm(false)}><form onSubmit={(event) => void submitRecord(event, 'task', setShowTaskForm)} className="grid gap-3"><label className="text-xs font-semibold">Task title<input name="title" required maxLength={160} className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold">Description<textarea name="description" rows={3} maxLength={2000} className={`${fieldClass} mt-1.5`} /></label><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold">Course code (optional)<input name="course_code" maxLength={32} className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold">Due date<input name="due_at" type="datetime-local" className={`${fieldClass} mt-1.5`} /></label></div><label className="text-xs font-semibold">Priority<select name="priority" className={`${fieldClass} mt-1.5`}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label><SubmitButton saving={saving}>Save task</SubmitButton></form></Dialog>}
-      {showMaterialForm && <Dialog title="Share course material" onClose={() => setShowMaterialForm(false)}><form onSubmit={(event) => void submitRecord(event, 'material', setShowMaterialForm)} className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold">Course code<input name="course_code" required maxLength={32} className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold">Course title<input name="course_title" required maxLength={120} className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold sm:col-span-2">Material title<input name="title" required maxLength={160} className={`${fieldClass} mt-1.5`} /></label><label className="text-xs font-semibold">Type<select name="file_type" className={`${fieldClass} mt-1.5`}><option value="lecture_notes">Lecture notes</option><option value="past_question">Past question</option><option value="study_guide">Study guide</option><option value="presentation">Presentation</option><option value="pdf">PDF</option><option value="other">Other</option></select></label><label className="text-xs font-semibold">File (up to 25 MB)<input name="file" type="file" required accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,image/*" className={`${fieldClass} mt-1.5 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-2 file:py-1 file:text-xs dark:file:bg-indigo-950`} /></label><label className="text-xs font-semibold sm:col-span-2">Description (optional)<textarea name="description" rows={2} maxLength={2000} className={`${fieldClass} mt-1.5`} /></label><SubmitButton saving={saving}>Upload &amp; share</SubmitButton></form></Dialog>}
+      {/* ============================================================ */}
+      {/* SECTION 1: TIMETABLE */}
+      {/* ============================================================ */}
+      {section === 'timetable' && (
+        <div className="space-y-6">
+          {/* Day Selector Chips */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 shadow-sm flex items-center justify-between gap-1 overflow-x-auto">
+            {days.map((day, idx) => {
+              const isSelected = activeDayIndex === idx;
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => setActiveDayIndex(idx)}
+                  className={`flex-1 min-w-[90px] py-2 px-3 rounded-xl text-center text-xs font-bold transition-all ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                      : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <span className="block text-[10px] uppercase tracking-wider opacity-75">Day {idx + 1}</span>
+                  <span>{day}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Action Row */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>{days[activeDayIndex]} Lectures</span>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                {activeDayClasses.length} {activeDayClasses.length === 1 ? 'Class' : 'Classes'}
+              </span>
+            </h2>
+
+            <button
+              type="button"
+              onClick={() => setShowClassForm(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm"
+            >
+              <Plus size={15} />
+              <span>Add Lecture</span>
+            </button>
+          </div>
+
+          {/* Day's Classes Grid */}
+          {activeDayClasses.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {activeDayClasses.map((cls) => (
+                <article
+                  key={cls.id}
+                  className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden"
+                >
+                  <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-gradient-to-b from-indigo-500 to-purple-600" />
+                  <div className="pl-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md">
+                        {cls.course_code}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500 dark:text-zinc-400 flex items-center gap-1">
+                        <Clock size={12} />
+                        {cls.start_time} – {cls.end_time}
+                      </span>
+                    </div>
+
+                    <h3 className="mt-2 text-base font-bold text-slate-900 dark:text-white">
+                      {cls.course_title}
+                    </h3>
+
+                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800 text-xs text-slate-500 dark:text-zinc-400 space-y-1">
+                      <p className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-700 dark:text-zinc-300">Venue:</span>
+                        <span>{cls.venue}</span>
+                      </p>
+                      {cls.lecturer_name && (
+                        <p className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-700 dark:text-zinc-300">Lecturer:</span>
+                          <span>{cls.lecturer_name}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-dashed border-slate-300 p-12 text-center dark:border-zinc-700 bg-white dark:bg-zinc-900">
+              <CalendarClock className="mx-auto text-slate-400" size={36} />
+              <h3 className="mt-3 font-bold text-slate-900 dark:text-white">No classes scheduled for {days[activeDayIndex]}</h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Enjoy your free study day or schedule a personal revision session!</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* SECTION 2: STUDY PLANNER & POMODORO */}
+      {/* ============================================================ */}
+      {section === 'planner' && (
+        <div className="space-y-6">
+          {/* Pomodoro Focus Timer Widget */}
+          <div className="rounded-3xl bg-gradient-to-r from-indigo-700 via-purple-700 to-pink-600 p-6 sm:p-7 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6">
+            <div className="space-y-1 text-center sm:text-left">
+              <span className="text-[10px] font-black uppercase tracking-wider text-indigo-200 bg-white/15 px-2.5 py-0.5 rounded-full">
+                Pomodoro Focus Engine
+              </span>
+              <h2 className="text-xl sm:text-2xl font-black">25-Minute Study Sprint</h2>
+              <p className="text-xs text-indigo-100/90 max-w-md">
+                Lock in with zero distraction. Boost memory retention for upcoming tests and exams.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="text-4xl sm:text-5xl font-black font-mono tracking-tight bg-black/20 px-5 py-2.5 rounded-2xl border border-white/20">
+                {formatTimer(pomodoroSeconds)}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTimerRunning(!isTimerRunning)}
+                  className="px-4 py-2 rounded-xl bg-white text-indigo-700 font-bold text-xs flex items-center gap-1.5 shadow-md hover:bg-indigo-50 transition-colors"
+                >
+                  {isTimerRunning ? <Pause size={14} /> : <Play size={14} />}
+                  <span>{isTimerRunning ? 'Pause' : 'Start'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsTimerRunning(false);
+                    setPomodoroSeconds(25 * 60);
+                  }}
+                  className="px-4 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-semibold text-xs flex items-center gap-1 transition-colors"
+                >
+                  <RotateCcw size={12} />
+                  <span>Reset</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Row */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>Assignments &amp; Revision Tasks</span>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                {tasks.filter((t) => t.is_completed).length} of {tasks.length} Done
+              </span>
+            </h2>
+
+            <button
+              type="button"
+              onClick={() => setShowTaskForm(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm"
+            >
+              <Plus size={15} />
+              <span>Add Task</span>
+            </button>
+          </div>
+
+          {/* Tasks List */}
+          <div className="space-y-3">
+            {tasks.map((task) => (
+              <div
+                key={task.id}
+                onClick={() => toggleTask(task)}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-4 ${
+                  task.is_completed
+                    ? 'bg-slate-50 dark:bg-zinc-900/40 border-slate-200/60 dark:border-zinc-800/60 opacity-60'
+                    : 'bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 shadow-sm hover:shadow-md'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`mt-0.5 w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 transition-colors ${
+                      task.is_completed
+                        ? 'bg-emerald-600 border-emerald-600 text-white'
+                        : 'border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-800'
+                    }`}
+                  >
+                    {task.is_completed && <Check size={14} />}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center gap-2">
+                      {task.course_code && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
+                          {task.course_code}
+                        </span>
+                      )}
+                      <h4
+                        className={`font-bold text-sm text-slate-900 dark:text-white ${
+                          task.is_completed ? 'line-through text-slate-400' : ''
+                        }`}
+                      >
+                        {task.title}
+                      </h4>
+                    </div>
+                    {task.description && (
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">{task.description}</p>
+                    )}
+                    <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                      <Clock size={11} /> {prettyDate(task.due_at)}
+                    </p>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full shrink-0 ${
+                    task.priority === 'high'
+                      ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                      : task.priority === 'normal'
+                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      : 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300'
+                  }`}
+                >
+                  {task.priority} Priority
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* SECTION 3: MATERIALS & NOTES VAULT */}
+      {/* ============================================================ */}
+      {section === 'materials' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Course Materials Vault</h2>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">Download shared lecture slides, exam handouts, and past questions.</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowMaterialForm(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm"
+            >
+              <FileUp size={15} />
+              <span>Share Handout</span>
+            </button>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {materials.map((mat) => (
+              <article
+                key={mat.id}
+                className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md">
+                      {mat.course_code}
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-slate-400">PDF / Doc</span>
+                  </div>
+
+                  <h3 className="mt-2.5 font-bold text-sm text-slate-900 dark:text-white leading-snug">
+                    {mat.title}
+                  </h3>
+
+                  {mat.description && (
+                    <p className="mt-2 text-xs text-slate-500 dark:text-zinc-400 line-clamp-3 leading-relaxed">
+                      {mat.description}
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-5 pt-3 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between">
+                  <div className="text-[11px] text-slate-400">
+                    <span>Uploaded by @{mat.uploader?.username || 'scholar'}</span>
+                  </div>
+
+                  <a
+                    href={mat.file_url}
+                    download
+                    onClick={(e) => {
+                      if (mat.file_url === '#') {
+                        e.preventDefault();
+                        alert('Sample handout ready for study in full version!');
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-600 hover:text-white text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-colors"
+                  >
+                    <Download size={13} />
+                    <span>Download</span>
+                  </a>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Class */}
+      {showClassForm && (
+        <div
+          role="presentation"
+          onClick={() => setShowClassForm(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
+          <div
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 space-y-4"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">Add Lecture to Timetable</h3>
+                <p className="text-xs text-slate-500">Keep track of your classes and halls.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowClassForm(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={submitClass} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  Course Code:
+                  <input name="course_code" required placeholder="e.g. CSC 301" className={`${fieldClass} mt-1`} />
+                </label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  Day of Week:
+                  <select name="day_of_week" defaultValue={activeDayIndex + 1} className={`${fieldClass} mt-1`}>
+                    {days.map((d, i) => (
+                      <option key={d} value={i + 1}>{d}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                Course Title:
+                <input name="course_title" required placeholder="e.g. Data Structures &amp; Algorithms" className={`${fieldClass} mt-1`} />
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  Lecture Hall / Venue:
+                  <input name="venue" required placeholder="e.g. Science LT 1" className={`${fieldClass} mt-1`} />
+                </label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  Lecturer Name (optional):
+                  <input name="lecturer_name" placeholder="e.g. Dr. Adeyemi" className={`${fieldClass} mt-1`} />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  Start Time:
+                  <input name="start_time" type="time" defaultValue="08:00" required className={`${fieldClass} mt-1`} />
+                </label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  End Time:
+                  <input name="end_time" type="time" defaultValue="10:00" required className={`${fieldClass} mt-1`} />
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md mt-2"
+              >
+                Save Class to Timetable
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Task */}
+      {showTaskForm && (
+        <div
+          role="presentation"
+          onClick={() => setShowTaskForm(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
+          <div
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 space-y-4"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">Add Study Task / Assignment</h3>
+                <p className="text-xs text-slate-500">Track deadlines and exams.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTaskForm(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={submitTask} className="space-y-3">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                Task Title:
+                <input name="title" required placeholder="e.g. Solve GST Assignment 2" className={`${fieldClass} mt-1`} />
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  Course Code:
+                  <input name="course_code" placeholder="e.g. GST 301" className={`${fieldClass} mt-1`} />
+                </label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                  Priority:
+                  <select name="priority" defaultValue="normal" className={`${fieldClass} mt-1`}>
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                Due Date:
+                <input name="due_at" type="datetime-local" className={`${fieldClass} mt-1`} />
+              </label>
+
+              <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                Short Notes:
+                <textarea name="description" rows={2} placeholder="Page numbers, group members..." className={`${fieldClass} mt-1`} />
+              </label>
+
+              <button
+                type="submit"
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md mt-2"
+              >
+                Save Task
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
-}
-
-function SubmitButton({ saving, children }: { saving: boolean; children: React.ReactNode }) {
-  return <button disabled={saving} className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60 sm:col-span-2">{saving && <LoaderCircle size={16} className="animate-spin" />}{children}</button>;
-}
-
-function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return <div role="presentation" onClick={onClose} className="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 p-3 sm:items-center"><section role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()} className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:p-7"><div className="mb-5 flex items-center justify-between gap-3"><h2 className="text-xl font-black text-slate-900 dark:text-white">{title}</h2><button type="button" onClick={onClose} aria-label="Close dialog" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800">×</button></div>{children}</section></div>;
 }

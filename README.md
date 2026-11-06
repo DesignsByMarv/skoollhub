@@ -68,9 +68,10 @@ navigation. Comment authors link to their public profiles.
 Profiles show a post grid, follower/following counts, and follow/message
 actions. Feed suggestions let students discover and follow other students.
 
-The authenticated app uses a fixed desktop sidebar. Existing Supabase browser
-sessions are sent directly to the feed when opening the home or sign-in page;
-the session is not replaced with a password stored in the browser.
+The authenticated app uses a fixed desktop sidebar. The site root always shows
+the public landing page for new and returning visitors. A confirmed Supabase
+session skips the sign-in form and opens the feed when the user visits
+`/login`; passwords are never stored in the browser.
 
 Direct chats persist text and file messages in Supabase and use Supabase
 Realtime for incoming messages. Chats also support recorded voice notes and
